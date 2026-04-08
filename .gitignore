@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+
+# Environment variables (SECRETS - NEVER COMMIT)
+.env
+.env.local
+.env.production
+
+# Next.js
+.next/
+out/
+
+# Debug
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Escrow wallet keypair
+escrow-keypair.json

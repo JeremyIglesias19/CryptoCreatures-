@@ -1,0 +1,100 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --fuego: #ef4444;
+  --agua: #3b82f6;
+  --naturaleza: #22c55e;
+  --rayo: #eab308;
+  --tierra: #a0845c;
+  --hielo: #67e8f9;
+  --dark-900: #0a0a1a;
+  --dark-800: #12122a;
+  --dark-700: #1a1a3e;
+}
+
+body {
+  background: linear-gradient(135deg, var(--dark-900), var(--dark-800));
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(139,92,246,0.3); border-radius: 3px; }
+
+/* Type badges */
+.type-fuego { background: rgba(239,68,68,0.2); color: #fca5a5; border: 1px solid rgba(239,68,68,0.3); }
+.type-agua { background: rgba(59,130,246,0.2); color: #93c5fd; border: 1px solid rgba(59,130,246,0.3); }
+.type-naturaleza { background: rgba(34,197,94,0.2); color: #86efac; border: 1px solid rgba(34,197,94,0.3); }
+.type-rayo { background: rgba(234,179,8,0.2); color: #fde047; border: 1px solid rgba(234,179,8,0.3); }
+.type-tierra { background: rgba(160,132,92,0.2); color: #d4b896; border: 1px solid rgba(160,132,92,0.3); }
+.type-hielo { background: rgba(103,232,249,0.2); color: #a5f3fc; border: 1px solid rgba(103,232,249,0.3); }
+
+/* Rarity glows */
+.rarity-comun { box-shadow: 0 0 15px rgba(156,163,175,0.2); }
+.rarity-poco-comun { box-shadow: 0 0 15px rgba(34,197,94,0.3); }
+.rarity-rara { box-shadow: 0 0 20px rgba(59,130,246,0.4); }
+.rarity-epica { box-shadow: 0 0 25px rgba(168,85,247,0.5); }
+.rarity-legendaria { box-shadow: 0 0 30px rgba(234,179,8,0.5); }
+.rarity-unica { box-shadow: 0 0 35px rgba(239,68,68,0.5); }
+
+/* Battle animations */
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-8px); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(-30px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.animate-float { animation: float 3s ease-in-out infinite; }
+.animate-shake { animation: shake 0.3s ease-in-out; }
+.animate-slideIn { animation: slideIn 0.5s ease-out; }
+
+/* HP bar colors */
+.hp-bar { transition: width 0.5s ease; }
+.hp-high { background: linear-gradient(90deg, #22c55e, #4ade80); }
+.hp-medium { background: linear-gradient(90deg, #eab308, #facc15); }
+.hp-low { background: linear-gradient(90deg, #ef4444, #f87171); }
+
+/* Card hover */
+.creature-card {
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.creature-card:hover {
+  transform: translateY(-4px);
+}
+
+/* Button styles */
+.btn-primary {
+  background: linear-gradient(135deg, #8b5cf6, #6d28d9);
+  transition: all 0.2s;
+}
+.btn-primary:hover {
+  background: linear-gradient(135deg, #a78bfa, #7c3aed);
+  box-shadow: 0 0 20px rgba(139,92,246,0.4);
+}
+
+.btn-battle {
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  transition: all 0.2s;
+}
+.btn-battle:hover {
+  background: linear-gradient(135deg, #f87171, #ef4444);
+  box-shadow: 0 0 20px rgba(239,68,68,0.4);
+}
