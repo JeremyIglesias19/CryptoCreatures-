@@ -1,6 +1,7 @@
 import { query } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { verifyTransaction, sendSOLFromEscrow, calculateFees } from '@/lib/solana';
+import { insertNotification } from '@/lib/notifications';
 
 // POST /api/marketplace/buy - Buy a fixed-price listing
 export async function POST(req) {
@@ -60,21 +61,57 @@ export async function POST(req) {
       }
     }
 
-    // Transfer creature ownership
-    await query('UPDATE creatures SET owner_id = $1, listed = false WHERE id = $2', [buyer.id, listing.creature_id]);
-
-    // Update listing
-    await query(`
+    // Cierre atómico de la listing: solo si sigue 'active'. Evita race entre dos
+    // compradores simultáneos (ambos verificaron SOL, solo uno debe quedarse con la NFT).
+    // Si alguien ya la compró, devolvemos 409 antes de transferir el creature.
+    const closeRes = await query(`
       UPDATE marketplace_listings
       SET status = 'sold', buyer_id = $1, tx_signature = $2, seller_tx = $3, platform_fee = $4, sold_at = NOW()
-      WHERE id = $5
+      WHERE id = $5 AND status = 'active'
+      RETURNING id
     `, [buyer.id, txSignature, sellerTx, fee, listing.id]);
+
+    if (closeRes.rows.length === 0) {
+      // Otro comprador se adelantó entre nuestro SELECT y este UPDATE.
+      // NO transferimos la criatura. El SOL ya se envió → toca reembolso manual
+      // (verificamos ya el tx on-chain, es idempotente en nuestra DB).
+      console.error('[MARKETPLACE] Race detected: listing sold concurrently', {
+        listingId: listing.id, buyer: buyer.id, tx: txSignature,
+      });
+      return NextResponse.json(
+        { error: 'Listing already sold. SOL payment was verified — contact support for refund.' },
+        { status: 409 }
+      );
+    }
+
+    // Ahora sí transferimos la criatura — el lock lógico está en la listing.
+    await query('UPDATE creatures SET owner_id = $1, listed = false WHERE id = $2', [buyer.id, listing.creature_id]);
 
     // Record transaction
     await query(`
       INSERT INTO marketplace_transactions (listing_id, tx_type, from_player_id, to_player_id, creature_id, amount_sol, tx_signature)
       VALUES ($1, 'sale', $2, $3, $4, $5, $6)
     `, [listing.id, buyer.id, listing.seller_id, listing.creature_id, listing.price_sol, txSignature]);
+
+    // Notificación para el vendedor. Best-effort: si falla no rompe la venta.
+    // Fetch del nombre de la criatura para el mensaje; si falla, fallback.
+    let creatureName = 'tu criatura';
+    try {
+      const nameRes = await query('SELECT name FROM creatures WHERE id = $1', [listing.creature_id]);
+      if (nameRes.rows[0]?.name) creatureName = nameRes.rows[0].name;
+    } catch { /* noop */ }
+    insertNotification(listing.seller_id, {
+      type: 'marketplace_sold',
+      title: '¡Vendiste una criatura!',
+      body: `${creatureName} se vendió por ${listing.price_sol} SOL.`,
+      payload: {
+        creature_id: listing.creature_id,
+        creature_name: creatureName,
+        price_sol: listing.price_sol,
+        seller_payout: sellerPayout,
+        listing_id: listing.id,
+      },
+    }).catch(err => console.error('[MARKETPLACE] notif error:', err.message));
 
     return NextResponse.json({
       success: true,

@@ -13,10 +13,11 @@ CREATE TABLE IF NOT EXISTS players (
   email         VARCHAR(255),
   energy        INT DEFAULT 10,                  -- Energía diaria para combates
   energy_reset  TIMESTAMP DEFAULT NOW(),
-  gems          INT DEFAULT 0,                   -- Moneda in-game
   elo           INT DEFAULT 1000,                -- Rating para matchmaking
   wins          INT DEFAULT 0,
   losses        INT DEFAULT 0,
+  streak_days   INT DEFAULT 1,                    -- Días consecutivos de login
+  last_active_date DATE DEFAULT CURRENT_DATE,     -- Fecha del último login (para streak)
   created_at    TIMESTAMP DEFAULT NOW(),
   last_login    TIMESTAMP DEFAULT NOW()
 );
@@ -38,6 +39,7 @@ CREATE TABLE IF NOT EXISTS creatures (
   mint_address  VARCHAR(64),                      -- Dirección del NFT en Solana (null si no minteado)
   wins          INT DEFAULT 0,
   losses        INT DEFAULT 0,
+  is_favorite   BOOLEAN DEFAULT false,             -- Marcada como favorita por su dueño
   created_at    TIMESTAMP DEFAULT NOW()
 );
 
@@ -72,7 +74,6 @@ CREATE TABLE IF NOT EXISTS egg_editions (
   id            VARCHAR(32) PRIMARY KEY,
   name          VARCHAR(64) NOT NULL,
   description   TEXT,
-  price_gems    INT DEFAULT 0,
   available     BOOLEAN DEFAULT true,
   creature_pool JSONB,                             -- Pool especial de criaturas
   starts_at     TIMESTAMP,
@@ -88,9 +89,34 @@ CREATE TABLE IF NOT EXISTS eggs (
   obtained_at   TIMESTAMP DEFAULT NOW()
 );
 
+-- Equipos guardados por jugador
+CREATE TABLE IF NOT EXISTS team_presets (
+  id            SERIAL PRIMARY KEY,
+  owner_id      INT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  name          VARCHAR(32) NOT NULL,
+  creature_ids  JSONB NOT NULL,                 -- Array de 3 IDs
+  created_at    TIMESTAMP DEFAULT NOW()
+);
+
+-- Notificaciones (campana de la navbar)
+CREATE TABLE IF NOT EXISTS notifications (
+  id          SERIAL PRIMARY KEY,
+  player_id   INT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  type        VARCHAR(32) NOT NULL,              -- marketplace_sold, tier_up, record, system
+  title       VARCHAR(120) NOT NULL,
+  body        VARCHAR(280),
+  payload     JSONB NOT NULL DEFAULT '{}'::jsonb,
+  read_at     TIMESTAMPTZ,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Índices para rendimiento
 CREATE INDEX idx_creatures_owner ON creatures(owner_id);
 CREATE INDEX idx_battles_players ON battles(player1_id, player2_id);
 CREATE INDEX idx_battles_status ON battles(status);
 CREATE INDEX idx_matchmaking_elo ON matchmaking_queue(elo);
 CREATE INDEX idx_players_elo ON players(elo);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_team_presets_owner_name ON team_presets(owner_id, LOWER(name));
+CREATE INDEX IF NOT EXISTS idx_team_presets_owner ON team_presets(owner_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_player_created ON notifications(player_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notifications_player_unread ON notifications(player_id) WHERE read_at IS NULL;

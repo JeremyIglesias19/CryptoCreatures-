@@ -26,6 +26,72 @@ const io = new Server(server, {
 });
 
 // ============================================
+// Rank tiers (espejo de src/app/game/page.js RANK_TIERS)
+// Mantener sincronizado con el cliente si cambian los thresholds.
+// ============================================
+const RANK_TIERS = [
+  { name: 'Maestro',  minElo: 1500 },
+  { name: 'Diamante', minElo: 1300 },
+  { name: 'Platino',  minElo: 1150 },
+  { name: 'Oro',      minElo: 1000 },
+  { name: 'Plata',    minElo: 850 },
+  { name: 'Bronce',   minElo: 0 },
+];
+function getTierName(elo) {
+  for (const t of RANK_TIERS) if (elo >= t.minElo) return t.name;
+  return 'Bronce';
+}
+
+// ============================================
+// Notificaciones (lado socket server)
+// Inserta + emite por socket si el jugador está online.
+// Cap de 50 best-effort.
+// ============================================
+const NOTIF_MAX_PER_PLAYER = 50;
+const NOTIF_VALID_TYPES = new Set(['marketplace_sold', 'tier_up', 'record', 'system']);
+
+async function insertNotification(playerId, { type, title, body = null, payload = {} }) {
+  if (!Number.isInteger(playerId) || playerId <= 0) return null;
+  if (!NOTIF_VALID_TYPES.has(type)) return null;
+  if (typeof title !== 'string' || title.length === 0) return null;
+
+  try {
+    const res = await pool.query(
+      `INSERT INTO notifications (player_id, type, title, body, payload)
+       VALUES ($1, $2, $3, $4, $5::jsonb)
+       RETURNING id, type, title, body, payload, read_at, created_at`,
+      [
+        playerId,
+        type,
+        title.slice(0, 120),
+        body ? String(body).slice(0, 280) : null,
+        JSON.stringify(payload || {}),
+      ]
+    );
+    // Cap best-effort
+    pool.query(
+      `DELETE FROM notifications
+       WHERE player_id = $1
+         AND id IN (
+           SELECT id FROM notifications
+           WHERE player_id = $1
+           ORDER BY created_at DESC
+           OFFSET $2
+         )`,
+      [playerId, NOTIF_MAX_PER_PLAYER]
+    ).catch(err => console.error('[notif] cap:', err.message));
+
+    // Push realtime al room del usuario si está conectado
+    const notif = res.rows[0];
+    io.to(`user:${playerId}`).emit('notif:new', notif);
+    return notif;
+  } catch (err) {
+    console.error('[notif] insert:', err.message);
+    return null;
+  }
+}
+
+// ============================================
 // AI Attack Selection (migrado del prototipo)
 // ============================================
 const TYPE_ADVANTAGE = {
@@ -120,6 +186,13 @@ const battleManager = new BattleManager();
 const matchmaker = new Matchmaker();
 const ELO_K = 32;
 
+// Periodic matchmaking scan - matches players as ELO range expands over time
+matchmaker.onMatch((match) => {
+  console.log(`[MM-SCAN] Match encontrado: ${match.player1.username} vs ${match.player2.username}`);
+  startMatch(match.player1, match.player2);
+});
+matchmaker.startPeriodicScan();
+
 // ============================================
 // Socket.IO connections
 // ============================================
@@ -135,6 +208,8 @@ io.on('connection', (socket) => {
       playerId = result.rows[0].id;
       socket.playerId = playerId;
       socket.playerData = result.rows[0];
+      // Room personal para push de notificaciones (io.to('user:123').emit(...))
+      socket.join(`user:${playerId}`);
       socket.emit('auth:success', { playerId, username: result.rows[0].username });
       console.log(`[AUTH] ${result.rows[0].username} (${playerId}) autenticado`);
     } catch (err) {
@@ -148,6 +223,20 @@ io.on('connection', (socket) => {
     const { teamIds } = data;
 
     try {
+      // Check daily battle limit (10 per day)
+      const dailyRes = await pool.query(
+        `SELECT COUNT(*) FROM battles
+         WHERE (player1_id = $1 OR player2_id = $1)
+         AND status = 'finished'
+         AND finished_at >= CURRENT_DATE`,
+        [playerId]
+      );
+      const dailyBattles = parseInt(dailyRes.rows[0].count);
+      const DAILY_LIMIT = 10;
+      if (dailyBattles >= DAILY_LIMIT) {
+        return socket.emit('error', { message: `Has alcanzado el límite de ${DAILY_LIMIT} batallas diarias. Vuelve mañana.` });
+      }
+
       const creaturesResult = await pool.query(
         'SELECT * FROM creatures WHERE id = ANY($1) AND owner_id = $2', [teamIds, playerId]
       );
@@ -155,10 +244,15 @@ io.on('connection', (socket) => {
         return socket.emit('error', { message: 'Selecciona exactamente 3 criaturas' });
       }
 
+      // Fetch fresh ELO from DB (might have changed since auth)
+      const freshEloRes = await pool.query('SELECT elo FROM players WHERE id = $1', [playerId]);
+      const freshElo = freshEloRes.rows[0]?.elo ?? socket.playerData.elo;
+      socket.playerData.elo = freshElo;
+
       const team = creaturesResult.rows.map(c => ({ ...c, attacks: c.attacks }));
       const entry = {
         id: playerId, socketId: socket.id,
-        elo: socket.playerData.elo, username: socket.playerData.username,
+        elo: freshElo, username: socket.playerData.username,
         team,
       };
 
@@ -271,8 +365,10 @@ function runAutoBattleTurn(battleId) {
   const atkIdx1 = aiChooseAttack(c1, c2);
   const atkIdx2 = aiChooseAttack(c2, c1);
 
-  const action1 = atkIdx1 !== null ? { type: 'attack', attackIndex: atkIdx1 } : { type: 'defend' };
-  const action2 = atkIdx2 !== null ? { type: 'attack', attackIndex: atkIdx2 } : { type: 'defend' };
+  // Si la IA no encuentra ataque viable (solo ocurre si attacks.length === 0),
+  // usamos el primer ataque como fallback para evitar partidas bloqueadas.
+  const action1 = { type: 'attack', attackIndex: atkIdx1 !== null ? atkIdx1 : 0 };
+  const action2 = { type: 'attack', attackIndex: atkIdx2 !== null ? atkIdx2 : 0 };
 
   // Execute turn
   const result = engine.executeTurn(action1, action2);
@@ -319,29 +415,61 @@ async function endBattle(battle, winnerId, reason) {
   clearTimeout(battle.turnTimer);
   const loserId = winnerId === battle.player1.id ? battle.player2.id : battle.player1.id;
 
-  const winnerElo = winnerId === battle.player1.id ? battle.player1.elo : battle.player2.elo;
-  const loserElo = winnerId === battle.player1.id ? battle.player2.elo : battle.player1.elo;
+  // Fetch fresh ELO from DB for accurate calculation
+  let p1Elo = battle.player1.elo;
+  let p2Elo = battle.player2.elo;
+  try {
+    const eloRes = await pool.query('SELECT id, elo FROM players WHERE id IN ($1, $2)', [battle.player1.id, battle.player2.id]);
+    for (const row of eloRes.rows) {
+      if (row.id === battle.player1.id) p1Elo = row.elo;
+      if (row.id === battle.player2.id) p2Elo = row.elo;
+    }
+  } catch {}
+
+  const winnerElo = winnerId === battle.player1.id ? p1Elo : p2Elo;
+  const loserElo = winnerId === battle.player1.id ? p2Elo : p1Elo;
+
+  // Elo formula: higher ELO diff = less points for winning against weaker opponent
   const expected = 1 / (1 + Math.pow(10, (loserElo - winnerElo) / 400));
-  const eloChange = Math.round(ELO_K * (1 - expected));
+  const eloChange = Math.max(1, Math.round(ELO_K * (1 - expected)));
 
   io.to(`battle:${battle.id}`).emit('battle:end', {
     winnerId, reason, eloChange,
+    player1Elo: p1Elo,
+    player2Elo: p2Elo,
     state: getBattleState(battle),
   });
 
   try {
+    // Add p1_elo and p2_elo columns to store ELO at battle time
     await pool.query(`
-      INSERT INTO battles (player1_id, player2_id, winner_id, status, battle_log, player1_team, player2_team, elo_change, turns, finished_at)
-      VALUES ($1, $2, $3, 'finished', $4, $5, $6, $7, $8, NOW())
+      INSERT INTO battles (player1_id, player2_id, winner_id, status, battle_log, player1_team, player2_team, elo_change, turns, p1_elo, p2_elo, finished_at)
+      VALUES ($1, $2, $3, 'finished', $4, $5, $6, $7, $8, $9, $10, NOW())
     `, [battle.player1.id, battle.player2.id, winnerId,
         JSON.stringify(battle.log), JSON.stringify(battle.player1.team),
-        JSON.stringify(battle.player2.team), eloChange, battle.turnNumber - 1]);
+        JSON.stringify(battle.player2.team), eloChange, battle.turnNumber - 1,
+        p1Elo, p2Elo]);
     await pool.query('UPDATE players SET elo = elo + $1, wins = wins + 1 WHERE id = $2', [eloChange, winnerId]);
     await pool.query('UPDATE players SET elo = GREATEST(0, elo - $1), losses = losses + 1 WHERE id = $2', [eloChange, loserId]);
+
+    // Detección de tier up en el ganador. Solo notificamos si cruza thresholds hacia arriba.
+    // Comparamos el tier ANTES (winnerElo) con el DESPUÉS (winnerElo + eloChange).
+    try {
+      const oldTier = getTierName(winnerElo);
+      const newTier = getTierName(winnerElo + eloChange);
+      if (oldTier !== newTier) {
+        insertNotification(winnerId, {
+          type: 'tier_up',
+          title: `¡Subiste a ${newTier}!`,
+          body: `Enhorabuena, alcanzaste ${winnerElo + eloChange} ELO.`,
+          payload: { old_tier: oldTier, new_tier: newTier, elo: winnerElo + eloChange },
+        }).catch(() => {});
+      }
+    } catch (err) { console.error('[tier-up] error:', err.message); }
   } catch (err) { console.error('[DB] Error guardando batalla:', err); }
 
   battleManager.endBattle(battle.id);
-  console.log(`[BATTLE] Fin: ganador=${winnerId} razón=${reason} ELO±${eloChange}`);
+  console.log(`[BATTLE] Fin: ganador=${winnerId} razón=${reason} ELO±${eloChange} (winner:${winnerElo} vs loser:${loserElo})`);
 }
 
 // ============================================

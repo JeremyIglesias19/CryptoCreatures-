@@ -1,5 +1,5 @@
 'use client';
-import { useState, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import CreatureAvatar from './CreatureAvatar';
 import { ABILITIES, RARITIES, rollQuality, getRarityKey } from '@/lib/gameData';
 
@@ -115,7 +115,9 @@ function Tooltip({ show, x, y, children }) {
   );
 }
 
-export default function EggShop({ player, onPurchase }) {
+const EGG_PRICE_EUR = 5;
+
+export default function EggShop({ player, onPurchase, claimSessionId, onClaimHandled }) {
   const [opening, setOpening] = useState(false);
   const [phase, setPhase] = useState('idle');
   const [revealedCreature, setRevealedCreature] = useState(null);
@@ -128,7 +130,9 @@ export default function EggShop({ player, onPurchase }) {
   const [flashColor, setFlashColor] = useState(null);
   const [animatedStats, setAnimatedStats] = useState({ hp: 0, atk: 0, def: 0, spd: 0 });
   const [tooltip, setTooltip] = useState({ show: false, x: 0, y: 0, content: null });
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
   const particleContainerRef = useRef(null);
+  const claimStartedRef = useRef(false);
 
   const spawnParticles = useCallback((color, count) => {
     const container = particleContainerRef.current;
@@ -252,35 +256,110 @@ export default function EggShop({ player, onPurchase }) {
   const hideTooltip = () => setTooltip({ show: false, x: 0, y: 0, content: null });
   const moveTooltip = (e) => { if (tooltip.show) setTooltip(prev => ({ ...prev, x: e.clientX, y: e.clientY })); };
 
-  const buyAndOpenEgg = async () => {
+  // Redirige al Checkout de Stripe. Tras el pago, Stripe nos devuelve a
+  // /game?egg_session=xxx. La pagina detecta ese parametro y llama a claimEgg().
+  const startStripeCheckout = async () => {
+    if (!player?.privy_id) return;
     setConfirmOpen(false);
+    setCheckoutLoading(true);
+    try {
+      const res = await fetch('/api/stripe/checkout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-privy-id': player.privy_id,
+        },
+      });
+      const data = await res.json();
+      if (!res.ok || !data.url) {
+        throw new Error(data.error || 'No se pudo iniciar el pago');
+      }
+      // Redirigir al Checkout alojado de Stripe
+      window.location.href = data.url;
+    } catch (err) {
+      console.error('[EGG] Checkout error:', err);
+      alert(err.message || 'Error iniciando el pago');
+      setCheckoutLoading(false);
+    }
+  };
+
+  // Animacion + polling del webhook tras el retorno desde Stripe.
+  const claimEgg = useCallback(async (sessionId) => {
+    if (!player?.privy_id || !sessionId) return;
+    if (claimStartedRef.current) return;
+    claimStartedRef.current = true;
+
     setOpening(true);
     setPhase('shaking');
     setShowCracks(false);
     setGlowOpacity(0);
     setGlowColor('transparent');
-    setStatusText('Conectando con Solana...');
+    setStatusText('Pago confirmado, preparando huevo...');
     setAnimatedStats({ hp: 0, atk: 0, def: 0, spd: 0 });
 
-    const apiPromise = fetch('/api/eggs/open', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-privy-id': player.privy_id },
-    }).then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(e)));
-
-    await new Promise(r => setTimeout(r, 500));
     playShakeSound();
 
-    await new Promise(r => setTimeout(r, 800));
+    // Polling: el webhook de Stripe puede tardar unos segundos en procesar
+    const maxAttempts = 30;
+    const delayMs = 1500;
+    let apiData = null;
 
-    let apiData;
-    try { apiData = await apiPromise; }
-    catch (err) { alert(err.error || 'Error al abrir huevo'); setOpening(false); setPhase('idle'); return; }
+    for (let i = 0; i < maxAttempts; i++) {
+      try {
+        const res = await fetch('/api/eggs/claim', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-privy-id': player.privy_id,
+          },
+          body: JSON.stringify({ sessionId }),
+        });
+        const data = await res.json();
+
+        if (data.status === 'paid' && data.creature) {
+          apiData = data;
+          break;
+        }
+        if (data.status === 'claimed') {
+          alert('Este huevo ya fue abierto en otra sesion.');
+          setOpening(false);
+          setPhase('idle');
+          claimStartedRef.current = false;
+          onClaimHandled && onClaimHandled();
+          onPurchase && onPurchase();
+          return;
+        }
+        if (data.status === 'failed') {
+          alert('El pago no se completo correctamente.');
+          setOpening(false);
+          setPhase('idle');
+          claimStartedRef.current = false;
+          onClaimHandled && onClaimHandled();
+          return;
+        }
+        if (i === 2) setStatusText('Confirmando pago con Stripe...');
+        if (i === 8) setStatusText('Generando criatura...');
+      } catch (err) {
+        console.error('[EGG] Claim error:', err);
+      }
+      await new Promise(r => setTimeout(r, delayMs));
+    }
+
+    if (!apiData) {
+      alert('No se pudo confirmar tu huevo a tiempo. Vuelve a la coleccion y refresca — tu criatura aparecera automaticamente cuando Stripe confirme el pago.');
+      setOpening(false);
+      setPhase('idle');
+      claimStartedRef.current = false;
+      onClaimHandled && onClaimHandled();
+      onPurchase && onPurchase();
+      return;
+    }
 
     const rarColor = RARITY_COLORS[apiData.creature.rarity] || '#8b5cf6';
     setRarityKeyResult(apiData.rarity || getRarityKey(apiData.creature.rarity));
     setGlowColor(rarColor);
     setGlowOpacity(0.6);
-    setStatusText('Generando VRF on-chain...');
+    setStatusText('Eclosionando...');
 
     await new Promise(r => setTimeout(r, 700));
     setPhase('shaking-hard');
@@ -301,12 +380,23 @@ export default function EggShop({ player, onPurchase }) {
     setPhase('revealed');
     animateStats(apiData.creature);
     playRevealSound(apiData.creature.rarity);
-  };
+
+    // Avisar al padre para que limpie el query param
+    onClaimHandled && onClaimHandled();
+  }, [player, onClaimHandled, onPurchase, spawnParticles, screenFlash, animateStats]);
+
+  // Disparar el claim si venimos redirigidos desde Stripe
+  useEffect(() => {
+    if (claimSessionId && !claimStartedRef.current) {
+      claimEgg(claimSessionId);
+    }
+  }, [claimSessionId, claimEgg]);
 
   const closeReveal = () => {
     setOpening(false); setPhase('idle'); setRevealedCreature(null);
     setGlowOpacity(0); setShowCracks(false); setFlashColor(null);
     hideTooltip();
+    claimStartedRef.current = false;
     onPurchase();
   };
 
@@ -400,29 +490,26 @@ export default function EggShop({ player, onPurchase }) {
           </div>
           <h3 className="text-[17px] text-white font-bold mb-1">Huevo</h3>
           <div className="text-[26px] font-extrabold text-sky-400 my-2 tracking-tight">
-            50 <small className="text-[12px] text-gray-500 font-medium">gemas</small>
+            {EGG_PRICE_EUR}€
           </div>
+          <div className="text-[12px] text-gray-500 mb-1">Pago seguro con tarjeta</div>
           <div className="flex justify-between text-[12px] text-gray-500 my-3">
             <span>x1 Criatura</span><span>Todas las rarezas</span>
           </div>
-          <button onClick={() => setConfirmOpen(true)} disabled={player.gems < 50}
+          <button onClick={() => setConfirmOpen(true)} disabled={checkoutLoading}
             className="w-full py-3.5 rounded-[14px] text-[14px] font-bold text-white transition-all hover:scale-[1.03] hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed"
-            style={{ background: 'linear-gradient(135deg, #4b5563, #374151)' }}>
-            {player.gems < 50 ? 'Sin gemas suficientes' : 'Comprar Huevo'}
+            style={{ background: checkoutLoading ? '#333' : 'linear-gradient(135deg, #7c3aed, #4f46e5)' }}>
+            {checkoutLoading ? 'Redirigiendo a Stripe...' : 'Comprar Huevo'}
           </button>
         </div>
       </div>
 
-      {/* DEV: Add gems */}
+      {/* Payment methods info */}
       <div className="flex justify-center mb-6">
-        <button onClick={async () => {
-          const res = await fetch('/api/dev/gems', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ privyId: player.privy_id, amount: 5000 }) });
-          if (res.ok) { const d = await res.json(); alert(`+5000 gemas! Total: ${d.gems}`); onPurchase(); }
-          else { const e = await res.json().catch(() => ({})); alert('Error: ' + (e.error || 'fallo')); }
-        }} className="px-4 py-2 rounded-lg text-[12px] font-bold text-yellow-300 bg-yellow-500/10 border border-yellow-500/30 hover:bg-yellow-500/20 transition-all">
-          DEV: +5000 Gemas
-        </button>
+        <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-[11px] font-medium bg-blue-500/10 text-blue-300 border border-blue-500/20">
+          <span className="w-2 h-2 rounded-full bg-green-400" />
+          Pago procesado por Stripe · SSL 256-bit
+        </div>
       </div>
 
       {/* Probability bar */}
@@ -450,15 +537,18 @@ export default function EggShop({ player, onPurchase }) {
             <h3 className="text-white text-xl font-extrabold mb-2">Confirmar compra</h3>
             <div className="bg-white/[0.04] rounded-[14px] p-4 my-4 text-left text-[13px] text-gray-400 leading-relaxed">
               <p>x1 Huevo</p>
-              <p className="mt-1"><strong className="text-white">Coste:</strong> 50 gemas</p>
-              <p className="mt-1"><strong className="text-white">Gemas restantes:</strong> {player.gems - 50}</p>
+              <p className="mt-1"><strong className="text-white">Precio:</strong> <span className="text-sky-400 font-bold">{EGG_PRICE_EUR}€</span></p>
+              <p className="mt-1"><strong className="text-white">Metodo de pago:</strong> Tarjeta (Stripe)</p>
+              <p className="mt-2 text-[11px] text-yellow-400/70">Seras redirigido a la pagina segura de Stripe para completar el pago. La criatura se minteara automaticamente al confirmarse.</p>
             </div>
             <div className="flex gap-2.5 mt-5">
-              <button onClick={() => setConfirmOpen(false)}
-                className="flex-1 py-3.5 rounded-[14px] text-[14px] font-bold bg-white/[0.06] text-gray-400 border border-white/10 hover:bg-white/10 hover:text-white transition-all">Cancelar</button>
-              <button onClick={buyAndOpenEgg}
-                className="flex-1 py-3.5 rounded-[14px] text-[14px] font-bold text-white transition-all hover:brightness-110 hover:scale-[1.02]"
-                style={{ background: 'linear-gradient(135deg, #7c3aed, #4f46e5)', boxShadow: '0 4px 20px rgba(124,58,237,0.3)' }}>Comprar</button>
+              <button onClick={() => setConfirmOpen(false)} disabled={checkoutLoading}
+                className="flex-1 py-3.5 rounded-[14px] text-[14px] font-bold bg-white/[0.06] text-gray-400 border border-white/10 hover:bg-white/10 hover:text-white transition-all disabled:opacity-40">Cancelar</button>
+              <button onClick={startStripeCheckout} disabled={checkoutLoading}
+                className="flex-1 py-3.5 rounded-[14px] text-[14px] font-bold text-white transition-all hover:brightness-110 hover:scale-[1.02] disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{ background: 'linear-gradient(135deg, #7c3aed, #4f46e5)', boxShadow: '0 4px 20px rgba(124,58,237,0.3)' }}>
+                {checkoutLoading ? 'Redirigiendo...' : 'Ir a pagar'}
+              </button>
             </div>
           </div>
         </div>

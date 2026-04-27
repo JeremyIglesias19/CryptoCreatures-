@@ -7,14 +7,37 @@ const RARITY_COLORS = {
   'Epica': '#a855f7', 'Legendaria': '#eab308', 'Unica': '#ef4444',
 };
 
-export default function Matchmaking({ selectedTeam, creatures, emit, on, connected, socketReady }) {
+const RARITY_GLOW = {
+  'Comun': 'rgba(156,163,175,0.15)', 'Poco Comun': 'rgba(34,197,94,0.2)', 'Rara': 'rgba(59,130,246,0.25)',
+  'Epica': 'rgba(168,85,247,0.3)', 'Legendaria': 'rgba(234,179,8,0.35)', 'Unica': 'rgba(239,68,68,0.4)',
+};
+
+export default function Matchmaking({ selectedTeam, creatures, emit, on, connected, socketReady, privyId }) {
   const [searching, setSearching] = useState(false);
   const [searchTime, setSearchTime] = useState(0);
+  const [dailyRemaining, setDailyRemaining] = useState(null);
+  const [pulsePhase, setPulsePhase] = useState(0);
+
+  // Fetch daily battle count
+  useEffect(() => {
+    if (!privyId) return;
+    fetch('/api/battles?limit=1', { headers: { 'x-privy-id': privyId } })
+      .then(r => r.json())
+      .then(data => setDailyRemaining(data.dailyRemaining ?? null))
+      .catch(() => {});
+  }, [privyId]);
 
   useEffect(() => {
     if (!searching) return;
     const timer = setInterval(() => setSearchTime(t => t + 1), 1000);
     return () => clearInterval(timer);
+  }, [searching]);
+
+  // Pulse animation for searching
+  useEffect(() => {
+    if (!searching) return;
+    const anim = setInterval(() => setPulsePhase(p => (p + 1) % 360), 50);
+    return () => clearInterval(anim);
   }, [searching]);
 
   useEffect(() => {
@@ -37,81 +60,371 @@ export default function Matchmaking({ selectedTeam, creatures, emit, on, connect
   };
 
   const teamCreatures = selectedTeam.map(id => creatures.find(c => c.id === id)).filter(Boolean);
+  const canFight = selectedTeam.length === 3 && connected && dailyRemaining !== 0;
 
   return (
-    <div className="max-w-2xl mx-auto text-center py-8">
-      <h2 className="text-[30px] font-extrabold tracking-tight mb-2">Combate PvP</h2>
-      <p className="text-gray-500 text-sm mb-8">Combates 3v3 en tiempo real contra otros jugadores</p>
+    <div style={{ maxWidth: 720, margin: '0 auto', padding: '24px 16px', position: 'relative' }}>
 
-      {/* Connection status */}
-      <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-[12px] font-medium mb-8 ${
-        connected ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'
-      }`}>
-        <span className={`w-2 h-2 rounded-full ${connected ? 'bg-green-400' : 'bg-red-400'} animate-pulse`} />
-        {connected ? 'Conectado al servidor PvP' : 'Conectando al servidor...'}
+      {/* Keyframes */}
+      <style>{`
+        @keyframes mm-float { 0%,100% { transform: translateY(0px); } 50% { transform: translateY(-8px); } }
+        @keyframes mm-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes mm-pulse-ring { 0% { transform: scale(0.8); opacity: 1; } 100% { transform: scale(2.2); opacity: 0; } }
+        @keyframes mm-glow-pulse { 0%,100% { opacity: 0.4; } 50% { opacity: 1; } }
+        @keyframes mm-slide-up { from { opacity:0; transform:translateY(20px); } to { opacity:1; transform:translateY(0); } }
+        @keyframes mm-shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+        @keyframes mm-sword-clash {
+          0%,100% { transform: rotate(-15deg) scale(1); }
+          25% { transform: rotate(5deg) scale(1.15); }
+          50% { transform: rotate(-15deg) scale(1); }
+          75% { transform: rotate(5deg) scale(1.1); }
+        }
+        @keyframes mm-dots { 0% { content: ''; } 33% { content: '.'; } 66% { content: '..'; } 100% { content: '...'; } }
+      `}</style>
+
+      {/* Title section */}
+      <div style={{ textAlign: 'center', marginBottom: 32, animation: 'mm-slide-up 0.5s ease-out' }}>
+        <div style={{ fontSize: 42, marginBottom: 4 }}>⚔️</div>
+        <h2 style={{
+          fontSize: 28,
+          fontWeight: 900,
+          letterSpacing: '-0.5px',
+          background: 'linear-gradient(135deg, #fff 0%, #c084fc 50%, #ef4444 100%)',
+          WebkitBackgroundClip: 'text',
+          WebkitTextFillColor: 'transparent',
+          margin: '0 0 6px 0',
+        }}>
+          Arena de Combate
+        </h2>
+        <p style={{ color: '#6b7280', fontSize: 13, margin: 0 }}>
+          Combates 3v3 en tiempo real contra otros jugadores
+        </p>
       </div>
 
-      {/* Selected team */}
+      {/* Status bar: Connection + Daily remaining */}
+      <div style={{
+        display: 'flex', justifyContent: 'center', gap: 12, marginBottom: 28,
+        animation: 'mm-slide-up 0.6s ease-out',
+      }}>
+        {/* Connection */}
+        <div style={{
+          display: 'inline-flex', alignItems: 'center', gap: 8,
+          padding: '8px 16px', borderRadius: 999,
+          fontSize: 11, fontWeight: 600, letterSpacing: '0.3px',
+          background: connected ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)',
+          border: `1px solid ${connected ? 'rgba(34,197,94,0.2)' : 'rgba(239,68,68,0.2)'}`,
+          color: connected ? '#4ade80' : '#f87171',
+        }}>
+          <span style={{
+            width: 7, height: 7, borderRadius: '50%',
+            background: connected ? '#4ade80' : '#f87171',
+            boxShadow: connected ? '0 0 8px rgba(74,222,128,0.5)' : '0 0 8px rgba(248,113,113,0.5)',
+            animation: 'mm-glow-pulse 2s ease-in-out infinite',
+          }} />
+          {connected ? 'Servidor PvP' : 'Conectando...'}
+        </div>
+
+        {/* Daily battles */}
+        {dailyRemaining !== null && (
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', gap: 8,
+            padding: '8px 16px', borderRadius: 999,
+            fontSize: 11, fontWeight: 600,
+            background: dailyRemaining > 3 ? 'rgba(168,85,247,0.08)' : dailyRemaining > 0 ? 'rgba(234,179,8,0.08)' : 'rgba(239,68,68,0.08)',
+            border: `1px solid ${dailyRemaining > 3 ? 'rgba(168,85,247,0.2)' : dailyRemaining > 0 ? 'rgba(234,179,8,0.2)' : 'rgba(239,68,68,0.2)'}`,
+            color: dailyRemaining > 3 ? '#c084fc' : dailyRemaining > 0 ? '#fbbf24' : '#f87171',
+          }}>
+            ⚔️ {dailyRemaining > 0 ? `${dailyRemaining}/10 batallas` : 'Sin batallas hoy'}
+          </div>
+        )}
+      </div>
+
+      {/* Team display */}
       {teamCreatures.length > 0 ? (
-        <div className="bg-[#0a0a20]/60 border border-purple-500/15 rounded-2xl p-6 mb-8">
-          <h3 className="text-[12px] uppercase tracking-wider text-gray-500 mb-4">Tu Equipo</h3>
-          <div className="flex justify-center gap-6">
-            {teamCreatures.map(c => {
+        <div style={{
+          background: 'linear-gradient(135deg, rgba(10,10,35,0.8), rgba(20,10,40,0.6))',
+          border: '1px solid rgba(168,85,247,0.15)',
+          borderRadius: 20, padding: '28px 24px', marginBottom: 28,
+          animation: 'mm-slide-up 0.7s ease-out',
+          position: 'relative', overflow: 'hidden',
+        }}>
+          {/* Subtle bg glow */}
+          <div style={{
+            position: 'absolute', top: '50%', left: '50%',
+            transform: 'translate(-50%,-50%)',
+            width: 300, height: 200, borderRadius: '50%',
+            background: 'radial-gradient(ellipse, rgba(168,85,247,0.06) 0%, transparent 70%)',
+            pointerEvents: 'none',
+          }} />
+
+          <div style={{
+            fontSize: 10, fontWeight: 700, letterSpacing: '2px',
+            textTransform: 'uppercase', color: '#6b7280', textAlign: 'center',
+            marginBottom: 20, position: 'relative',
+          }}>
+            ✦ Tu Equipo ✦
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 32, position: 'relative' }}>
+            {teamCreatures.map((c, i) => {
               const types = Array.isArray(c.types) ? c.types : [c.types];
               const rarColor = RARITY_COLORS[c.rarity] || '#8b5cf6';
+              const glow = RARITY_GLOW[c.rarity] || 'rgba(139,92,246,0.2)';
               return (
-                <div key={c.id} className="text-center">
-                  <div className="flex justify-center mb-2">
-                    <CreatureAvatar name={c.name} types={types} rarity={c.rarity} size={80} />
+                <div key={c.id} style={{
+                  textAlign: 'center',
+                  animation: `mm-float ${3 + i * 0.4}s ease-in-out infinite`,
+                  animationDelay: `${i * 0.2}s`,
+                }}>
+                  {/* Creature avatar with glow */}
+                  <div style={{
+                    position: 'relative', display: 'inline-block', marginBottom: 10,
+                  }}>
+                    {/* Glow behind */}
+                    <div style={{
+                      position: 'absolute', top: '50%', left: '50%',
+                      transform: 'translate(-50%,-50%)',
+                      width: 100, height: 100, borderRadius: '50%',
+                      background: `radial-gradient(circle, ${glow} 0%, transparent 70%)`,
+                      filter: 'blur(8px)', pointerEvents: 'none',
+                    }} />
+                    {/* Ring */}
+                    <div style={{
+                      width: 96, height: 96, borderRadius: '50%',
+                      padding: 3,
+                      background: `linear-gradient(135deg, ${rarColor}44, ${rarColor}88, ${rarColor}44)`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      position: 'relative',
+                    }}>
+                      <div style={{
+                        width: 90, height: 90, borderRadius: '50%',
+                        background: '#0d0d25',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        overflow: 'hidden',
+                      }}>
+                        <CreatureAvatar name={c.name} types={types} rarity={c.rarity} size={82} />
+                      </div>
+                    </div>
                   </div>
-                  <p className="text-[13px] font-bold text-white">{c.name}</p>
-                  <span className="inline-block text-[9px] font-bold px-2 py-0.5 rounded-full mt-0.5"
-                    style={{ background: rarColor + '22', color: rarColor }}>{c.rarity}</span>
-                  <div className="flex justify-center gap-3 mt-1.5 text-[10px] text-gray-500">
-                    <span>HP {c.hp}</span>
-                    <span>ATK {c.atk}</span>
-                    <span>SPD {c.spd}</span>
+
+                  {/* Name */}
+                  <p style={{ fontSize: 14, fontWeight: 800, color: '#fff', margin: '0 0 4px 0' }}>
+                    {c.name}
+                  </p>
+
+                  {/* Rarity badge */}
+                  <span style={{
+                    display: 'inline-block', fontSize: 9, fontWeight: 700,
+                    padding: '3px 10px', borderRadius: 999,
+                    background: `${rarColor}18`, color: rarColor,
+                    border: `1px solid ${rarColor}30`,
+                    letterSpacing: '0.5px',
+                  }}>
+                    {c.rarity}
+                  </span>
+
+                  {/* Stats */}
+                  <div style={{
+                    display: 'flex', justifyContent: 'center', gap: 8, marginTop: 8,
+                  }}>
+                    {[
+                      { label: 'HP', val: c.hp, color: '#ef4444' },
+                      { label: 'ATK', val: c.atk, color: '#f97316' },
+                      { label: 'SPD', val: c.spd, color: '#3b82f6' },
+                    ].map(s => (
+                      <div key={s.label} style={{
+                        fontSize: 9, fontWeight: 700, color: s.color,
+                        background: `${s.color}12`, padding: '2px 6px',
+                        borderRadius: 6, letterSpacing: '0.3px',
+                      }}>
+                        {s.label} {s.val}
+                      </div>
+                    ))}
                   </div>
                 </div>
               );
             })}
           </div>
+
+          {/* Team power indicator */}
+          <div style={{
+            textAlign: 'center', marginTop: 20,
+            fontSize: 11, color: '#6b7280', fontWeight: 600,
+          }}>
+            Poder total: <span style={{ color: '#c084fc', fontWeight: 800 }}>
+              {teamCreatures.reduce((sum, c) => sum + (c.hp || 0) + (c.atk || 0) + (c.spd || 0), 0)}
+            </span>
+          </div>
         </div>
       ) : (
-        <div className="bg-[#0a0a20]/30 border border-dashed border-gray-700 rounded-2xl p-10 mb-8 text-gray-500">
-          <p className="text-[14px]">Selecciona 3 criaturas en tu <strong className="text-purple-400">Coleccion</strong> para formar tu equipo</p>
-          <p className="text-[11px] text-gray-600 mt-2">Haz click en las criaturas para seleccionarlas</p>
+        /* No team selected */
+        <div style={{
+          background: 'rgba(10,10,35,0.3)',
+          border: '2px dashed rgba(107,114,128,0.25)',
+          borderRadius: 20, padding: '48px 24px', marginBottom: 28,
+          textAlign: 'center',
+          animation: 'mm-slide-up 0.7s ease-out',
+        }}>
+          <div style={{ fontSize: 48, marginBottom: 12, opacity: 0.4 }}>🎭</div>
+          <p style={{ fontSize: 15, color: '#9ca3af', margin: '0 0 6px 0', fontWeight: 600 }}>
+            Selecciona 3 criaturas para tu equipo
+          </p>
+          <p style={{ fontSize: 11, color: '#4b5563', margin: 0 }}>
+            Ve a tu <span style={{ color: '#a855f7', fontWeight: 700 }}>Coleccion</span> y haz click en las criaturas
+          </p>
         </div>
       )}
 
-      {/* Search button / searching state */}
-      {searching ? (
-        <div>
-          <div className="mb-5">
-            <div className="w-20 h-20 mx-auto border-4 border-purple-500/30 border-t-purple-500 rounded-full animate-spin" />
-          </div>
-          <p className="text-purple-400 font-extrabold text-[18px] mb-1">Buscando oponente...</p>
-          <p className="text-gray-500 text-[13px] mb-1 font-mono">
-            {Math.floor(searchTime / 60)}:{(searchTime % 60).toString().padStart(2, '0')}
-          </p>
-          <p className="text-[11px] text-gray-600 mb-6">El rango de ELO se expande con el tiempo</p>
-          <button onClick={cancelSearch}
-            className="px-8 py-3 rounded-xl border border-red-500/30 text-red-400 font-bold text-[13px] hover:bg-red-500/10 transition-all">
-            Cancelar busqueda
-          </button>
-        </div>
-      ) : (
-        <button onClick={startSearch}
-          disabled={selectedTeam.length !== 3 || !connected}
-          className="px-12 py-4 rounded-xl text-[16px] font-extrabold text-white disabled:opacity-40 disabled:cursor-not-allowed transition-all hover:scale-[1.03] hover:brightness-110"
-          style={{
-            background: selectedTeam.length === 3 && connected ? 'linear-gradient(135deg, #ef4444, #dc2626)' : '#333',
-            boxShadow: selectedTeam.length === 3 && connected ? '0 4px 25px rgba(239,68,68,0.35)' : 'none',
+      {/* Action area */}
+      <div style={{ textAlign: 'center', animation: 'mm-slide-up 0.8s ease-out' }}>
+        {searching ? (
+          /* Searching state */
+          <div style={{
+            background: 'linear-gradient(135deg, rgba(10,10,35,0.8), rgba(20,10,40,0.6))',
+            border: '1px solid rgba(168,85,247,0.2)',
+            borderRadius: 20, padding: '36px 24px',
+            position: 'relative', overflow: 'hidden',
           }}>
-          {selectedTeam.length !== 3 ? `Selecciona ${3 - selectedTeam.length} criatura${3 - selectedTeam.length > 1 ? 's' : ''} mas` :
-           !connected ? 'Conectando al servidor...' : '⚔️ Buscar Oponente'}
-        </button>
-      )}
+            {/* Animated bg */}
+            <div style={{
+              position: 'absolute', inset: 0,
+              background: `conic-gradient(from ${pulsePhase}deg, transparent, rgba(168,85,247,0.05), transparent, rgba(239,68,68,0.05), transparent)`,
+              pointerEvents: 'none',
+            }} />
+
+            {/* Spinner */}
+            <div style={{ position: 'relative', width: 80, height: 80, margin: '0 auto 20px' }}>
+              {/* Outer ring */}
+              <div style={{
+                position: 'absolute', inset: 0,
+                border: '3px solid rgba(168,85,247,0.1)',
+                borderTopColor: '#a855f7',
+                borderRightColor: '#ef4444',
+                borderRadius: '50%',
+                animation: 'mm-spin 1.2s linear infinite',
+              }} />
+              {/* Inner ring */}
+              <div style={{
+                position: 'absolute', inset: 10,
+                border: '2px solid rgba(239,68,68,0.1)',
+                borderBottomColor: '#ef4444',
+                borderLeftColor: '#a855f7',
+                borderRadius: '50%',
+                animation: 'mm-spin 1.8s linear infinite reverse',
+              }} />
+              {/* Center icon */}
+              <div style={{
+                position: 'absolute', inset: 0,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 28,
+                animation: 'mm-sword-clash 2s ease-in-out infinite',
+              }}>
+                ⚔️
+              </div>
+              {/* Pulse rings */}
+              {[0, 1, 2].map(i => (
+                <div key={i} style={{
+                  position: 'absolute', inset: -10,
+                  border: '1px solid rgba(168,85,247,0.2)',
+                  borderRadius: '50%',
+                  animation: `mm-pulse-ring 2s ease-out infinite`,
+                  animationDelay: `${i * 0.7}s`,
+                }} />
+              ))}
+            </div>
+
+            {/* Search text */}
+            <p style={{
+              fontSize: 20, fontWeight: 900, margin: '0 0 6px 0',
+              background: 'linear-gradient(135deg, #c084fc, #ef4444)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+            }}>
+              Buscando oponente
+            </p>
+
+            {/* Timer */}
+            <div style={{
+              fontSize: 28, fontWeight: 900, color: '#fff',
+              fontFamily: 'monospace', margin: '8px 0',
+              letterSpacing: '2px',
+            }}>
+              {Math.floor(searchTime / 60).toString().padStart(2, '0')}
+              <span style={{ color: '#a855f7', animation: 'mm-glow-pulse 1s ease-in-out infinite' }}>:</span>
+              {(searchTime % 60).toString().padStart(2, '0')}
+            </div>
+
+            <p style={{ fontSize: 11, color: '#6b7280', margin: '0 0 24px 0' }}>
+              El rango de ELO se expande con el tiempo
+            </p>
+
+            {/* Cancel button */}
+            <button onClick={cancelSearch} style={{
+              padding: '12px 32px', borderRadius: 14,
+              background: 'transparent',
+              border: '1px solid rgba(239,68,68,0.3)',
+              color: '#f87171', fontSize: 13, fontWeight: 700,
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+            }}
+            onMouseEnter={e => {
+              e.target.style.background = 'rgba(239,68,68,0.1)';
+              e.target.style.borderColor = 'rgba(239,68,68,0.5)';
+            }}
+            onMouseLeave={e => {
+              e.target.style.background = 'transparent';
+              e.target.style.borderColor = 'rgba(239,68,68,0.3)';
+            }}>
+              ✕ Cancelar busqueda
+            </button>
+          </div>
+        ) : (
+          /* Fight button */
+          <div>
+            <button onClick={startSearch} disabled={!canFight} style={{
+              padding: '18px 56px', borderRadius: 16,
+              fontSize: 18, fontWeight: 900,
+              letterSpacing: '0.5px',
+              color: '#fff',
+              border: 'none',
+              cursor: canFight ? 'pointer' : 'not-allowed',
+              opacity: canFight ? 1 : 0.4,
+              background: canFight
+                ? 'linear-gradient(135deg, #dc2626, #b91c1c, #991b1b)'
+                : 'rgba(75,85,99,0.3)',
+              boxShadow: canFight
+                ? '0 4px 30px rgba(220,38,38,0.4), 0 0 60px rgba(220,38,38,0.15), inset 0 1px 0 rgba(255,255,255,0.1)'
+                : 'none',
+              transition: 'all 0.3s ease',
+              position: 'relative',
+              overflow: 'hidden',
+            }}
+            onMouseEnter={e => {
+              if (!canFight) return;
+              e.target.style.transform = 'scale(1.05)';
+              e.target.style.boxShadow = '0 6px 40px rgba(220,38,38,0.5), 0 0 80px rgba(220,38,38,0.2), inset 0 1px 0 rgba(255,255,255,0.15)';
+            }}
+            onMouseLeave={e => {
+              if (!canFight) return;
+              e.target.style.transform = 'scale(1)';
+              e.target.style.boxShadow = '0 4px 30px rgba(220,38,38,0.4), 0 0 60px rgba(220,38,38,0.15), inset 0 1px 0 rgba(255,255,255,0.1)';
+            }}>
+              {dailyRemaining === 0 ? '🚫 Límite diario alcanzado' :
+               selectedTeam.length !== 3 ? `Selecciona ${3 - selectedTeam.length} criatura${3 - selectedTeam.length > 1 ? 's' : ''} mas` :
+               !connected ? '⏳ Conectando al servidor...' : '⚔️ BUSCAR OPONENTE'}
+            </button>
+
+            {canFight && (
+              <p style={{
+                fontSize: 11, color: '#4b5563', marginTop: 12,
+                animation: 'mm-glow-pulse 3s ease-in-out infinite',
+              }}>
+                Pulsa para entrar en la cola de matchmaking
+              </p>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

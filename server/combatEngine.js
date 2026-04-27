@@ -53,7 +53,6 @@ class CombatEngine {
       maxHP: c.hp,
       status: null,
       statusTurns: 0,
-      defending: false,
       // Flags de habilidades
       firstAttack: true,
       shieldUsed: false,
@@ -95,16 +94,11 @@ class CombatEngine {
 
   // ============================================
   // Ejecutar un turno completo
-  // action1 = { type: 'attack', attackIndex: N } | { type: 'defend' } | { type: 'switch', creatureIndex: N }
+  // action1 = { type: 'attack', attackIndex: N } | { type: 'switch', creatureIndex: N }
   // action2 = igual
   // ============================================
   executeTurn(action1, action2) {
     if (this.finished) return { events: [], winner: this.winner };
-
-    const p1 = this.team1[this.active1];
-    const p2 = this.team2[this.active2];
-    p1.defending = false;
-    p2.defending = false;
 
     const events = [];
 
@@ -127,10 +121,6 @@ class CombatEngine {
     // Obtener criaturas activas post-switch
     const c1 = this.team1[this.active1];
     const c2 = this.team2[this.active2];
-
-    // Defender
-    if (action1.type === 'defend') { c1.defending = true; events.push({ type: 'defend', side: 'player1', creature: c1.name }); }
-    if (action2.type === 'defend') { c2.defending = true; events.push({ type: 'defend', side: 'player2', creature: c2.name }); }
 
     // Seleccionar ataques
     const atk1 = action1.type === 'attack' ? c1.attacks[action1.attackIndex] : null;
@@ -231,9 +221,11 @@ class CombatEngine {
 
     // Escudo Natural
     let shieldMod = 1;
+    let shieldTriggered = false;
     if (defender.ability === 'Escudo Natural' && !defender.shieldUsed) {
       shieldMod = 0.5;
       defender.shieldUsed = true;
+      shieldTriggered = true;
     }
 
     // Escamas Gruesas
@@ -259,7 +251,7 @@ class CombatEngine {
     if (attacker._ecoBuff && attacker._ecoBuffTurns > 0) atkMod *= 1.15;
 
     // DEF modifiers
-    let defMod = defender.defending ? defender.def * 2 : defender.def;
+    let defMod = defender.def;
     if (defender.ability === 'Resonancia' && defender._resonanceActive) defMod *= 1.1;
     if (attacker.ability === 'Penetracion') defMod *= 0.8;
 
@@ -301,7 +293,7 @@ class CombatEngine {
     // Eco Elemental
     let ecoTriggered = (attacker.ability === 'Eco Elemental' && typeMulti > 1);
 
-    return { damage, missed: false, dodged: false, effective: typeMulti, effect, reactiveEffect, recoil, critical, ironWillTriggered, mirrorDmg, ecoTriggered };
+    return { damage, missed: false, dodged: false, effective: typeMulti, effect, reactiveEffect, recoil, critical, ironWillTriggered, mirrorDmg, ecoTriggered, shieldTriggered };
   }
 
   // ============================================

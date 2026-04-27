@@ -21,6 +21,30 @@ export async function GET(req) {
     player.energy = 10;
   }
 
+  // Daily streak: actualizar si no se ha actualizado hoy
+  try {
+    const streakRes = await query(
+      `UPDATE players
+       SET streak_days = CASE
+           WHEN last_active_date = CURRENT_DATE THEN streak_days
+           WHEN last_active_date = CURRENT_DATE - INTERVAL '1 day' THEN streak_days + 1
+           ELSE 1
+         END,
+         last_active_date = CURRENT_DATE,
+         last_login = NOW()
+       WHERE id = $1
+       RETURNING streak_days, last_active_date`,
+      [player.id]
+    );
+    if (streakRes.rows[0]) {
+      player.streak_days = streakRes.rows[0].streak_days;
+      player.last_active_date = streakRes.rows[0].last_active_date;
+    }
+  } catch (err) {
+    // Si la migración de streak aún no se ha aplicado, no rompemos la ruta
+    console.warn('[PLAYER] Streak update skipped:', err.message);
+  }
+
   // Update wallet address if provided and not yet saved
   const walletAddress = req.headers.get('x-wallet-address');
   if (walletAddress && !player.wallet_address) {
@@ -28,7 +52,29 @@ export async function GET(req) {
     player.wallet_address = walletAddress;
   }
 
-  return NextResponse.json({ player, creatures: creaturesRes.rows });
+  // Daily battle counter (navbar)
+  const DAILY_LIMIT = 10;
+  let dailyBattles = 0;
+  try {
+    const dailyRes = await query(
+      `SELECT COUNT(*)::int AS n FROM battles
+       WHERE (player1_id = $1 OR player2_id = $1)
+       AND status = 'finished'
+       AND finished_at >= CURRENT_DATE`,
+      [player.id]
+    );
+    dailyBattles = dailyRes.rows[0]?.n || 0;
+  } catch (err) {
+    console.warn('[PLAYER] Daily battles count failed:', err.message);
+  }
+
+  return NextResponse.json({
+    player,
+    creatures: creaturesRes.rows,
+    dailyBattles,
+    dailyLimit: DAILY_LIMIT,
+    dailyRemaining: Math.max(0, DAILY_LIMIT - dailyBattles),
+  });
 }
 
 // POST /api/player - Crear nuevo jugador + huevos iniciales
@@ -39,12 +85,24 @@ export async function POST(req) {
   const body = await req.json();
   const { email, username, walletAddress } = body;
 
-  // Crear jugador
-  const insertRes = await query(
-    'INSERT INTO players (privy_id, email, username, gems, wallet_address) VALUES ($1, $2, $3, 100, $4) RETURNING *',
-    [privyId, email, username, walletAddress || null]
-  );
-  const player = insertRes.rows[0];
+  // Crear jugador (streak inicial = 1)
+  let player;
+  try {
+    const insertRes = await query(
+      `INSERT INTO players (privy_id, email, username, wallet_address, streak_days, last_active_date)
+       VALUES ($1, $2, $3, $4, 1, CURRENT_DATE) RETURNING *`,
+      [privyId, email, username, walletAddress || null]
+    );
+    player = insertRes.rows[0];
+  } catch (err) {
+    // Fallback si la migración de streak aún no se aplicó
+    console.warn('[PLAYER] Creación sin columnas streak:', err.message);
+    const insertRes = await query(
+      'INSERT INTO players (privy_id, email, username, wallet_address) VALUES ($1, $2, $3, $4) RETURNING *',
+      [privyId, email, username, walletAddress || null]
+    );
+    player = insertRes.rows[0];
+  }
 
   // Dar 3 criaturas iniciales (comunes) para poder empezar a jugar
   const starterCreatures = [];

@@ -51,18 +51,114 @@ export const RARITIES = {
 // Stat tier quality based on position within rarity range
 export function rollQuality(value, min, max) {
   const pct = (value - min) / (max - min);
-  if (pct >= 1.00) return { label: 'SSS', cls: 'roll-sss' };
-  if (pct >= 0.90) return { label: 'SS',  cls: 'roll-ss' };
-  if (pct >= 0.75) return { label: 'S',   cls: 'roll-s' };
-  if (pct >= 0.55) return { label: 'A',   cls: 'roll-a' };
-  if (pct >= 0.35) return { label: 'B',   cls: 'roll-b' };
-  if (pct >= 0.15) return { label: 'C',   cls: 'roll-c' };
+  if (pct >= 0.97) return { label: 'SSS', cls: 'roll-sss' };
+  if (pct >= 0.93) return { label: 'SS',  cls: 'roll-ss' };
+  if (pct >= 0.90) return { label: 'S',   cls: 'roll-s' };
+  if (pct >= 0.80) return { label: 'A',   cls: 'roll-a' };
+  if (pct >= 0.65) return { label: 'B',   cls: 'roll-b' };
+  if (pct >= 0.40) return { label: 'C',   cls: 'roll-c' };
   return                   { label: 'D',   cls: 'roll-d' };
 }
 
 // Get rarity key from rarity display name
 export function getRarityKey(rarityName) {
   return Object.keys(RARITIES).find(k => RARITIES[k].name === rarityName) || 'common';
+}
+
+// ============================================
+// Tipos y análisis de equipo (reutiliza TYPE_ADVANTAGE/TYPE_DISADVANTAGE declarados arriba).
+// ============================================
+export const ALL_TYPES = TYPES;
+
+// ============================================
+// Análisis de equipo
+// Devuelve:
+//  - attackCoverage: para cada tipo defensor, qué % de los ataques del equipo son super efectivos
+//  - defenseWeakness: para cada tipo atacante, qué % de las criaturas del equipo lo reciben super efectivo
+//  - statsAgg: HP total, avg ATK/DEF/SPD, tier medio (SSS-D)
+// ============================================
+export function analyzeTeam(team) {
+  if (!Array.isArray(team) || team.length === 0) return null;
+
+  // Ataques del equipo (flatten). Defensivo: si el JSON está corrupto lo ignoramos
+  // en lugar de tirar la función entera; así la UI no se rompe si la DB devuelve raro.
+  const attacks = [];
+  for (const c of team) {
+    let rawAttacks = c?.attacks;
+    if (typeof rawAttacks === 'string') {
+      try { rawAttacks = JSON.parse(rawAttacks); } catch { rawAttacks = null; }
+    }
+    if (Array.isArray(rawAttacks)) attacks.push(...rawAttacks);
+  }
+
+  // Cobertura ofensiva: por cada tipo enemigo, contamos cuántos ataques lo cubren bien
+  const attackCoverage = {};
+  for (const defType of ALL_TYPES) {
+    let effective = 0;
+    for (const atk of attacks) {
+      if (!atk.type) continue; // ataques neutros se ignoran
+      if (TYPE_ADVANTAGE[atk.type]?.includes(defType)) effective++;
+    }
+    attackCoverage[defType] = {
+      count: effective,
+      pct: attacks.length > 0 ? Math.round((effective / attacks.length) * 100) : 0,
+    };
+  }
+
+  // Debilidades defensivas: por cada tipo atacante, cuántas criaturas del equipo son débiles
+  const defenseWeakness = {};
+  for (const atkType of ALL_TYPES) {
+    let weak = 0;
+    let resist = 0;
+    for (const c of team) {
+      const cTypes = Array.isArray(c.types) ? c.types : [c.types];
+      let mult = 1;
+      for (const ct of cTypes) {
+        if (TYPE_ADVANTAGE[atkType]?.includes(ct)) mult *= 1.5;
+        if (TYPE_DISADVANTAGE[atkType]?.includes(ct)) mult *= 0.65;
+      }
+      if (mult > 1) weak++;
+      else if (mult < 1) resist++;
+    }
+    defenseWeakness[atkType] = { weak, resist, neutral: team.length - weak - resist };
+  }
+
+  // Stats agregados
+  const hp = team.reduce((s, c) => s + (c.hp || 0), 0);
+  const atkAvg = Math.round(team.reduce((s, c) => s + (c.atk || 0), 0) / team.length);
+  const defAvg = Math.round(team.reduce((s, c) => s + (c.def || 0), 0) / team.length);
+  const spdAvg = Math.round(team.reduce((s, c) => s + (c.spd || 0), 0) / team.length);
+
+  // Tier medio: promedio de percentiles de las 4 stats dentro del rango de cada rareza
+  let sumPct = 0;
+  let count = 0;
+  for (const c of team) {
+    const rKey = getRarityKey(c.rarity);
+    const r = RARITIES[rKey];
+    if (!r) continue;
+    for (const k of ['hp', 'atk', 'def', 'spd']) {
+      const range = r[k];
+      if (!range) continue;
+      const [min, max] = range;
+      if (max <= min) continue;
+      sumPct += Math.max(0, Math.min(1, (c[k] - min) / (max - min)));
+      count++;
+    }
+  }
+  const avgPct = count > 0 ? sumPct / count : 0;
+  let tierLabel = 'D';
+  if (avgPct >= 0.97) tierLabel = 'SSS';
+  else if (avgPct >= 0.93) tierLabel = 'SS';
+  else if (avgPct >= 0.90) tierLabel = 'S';
+  else if (avgPct >= 0.80) tierLabel = 'A';
+  else if (avgPct >= 0.65) tierLabel = 'B';
+  else if (avgPct >= 0.40) tierLabel = 'C';
+
+  return {
+    attackCoverage,
+    defenseWeakness,
+    statsAgg: { hp, atkAvg, defAvg, spdAvg, tier: tierLabel },
+  };
 }
 
 export const ATTACKS_DB = [
