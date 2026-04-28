@@ -1,11 +1,12 @@
 import { query } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import { getAuthenticatedPrivyId } from '@/lib/privyAuth';
 
 // GET /api/creatures/:id/battles
 // Devuelve los últimos 10 combates en los que esta criatura ha participado.
 // Busca el id de la criatura dentro de los snapshots JSONB player1_team / player2_team.
 export async function GET(req, { params }) {
-  const privyId = req.headers.get('x-privy-id');
+  const privyId = await getAuthenticatedPrivyId(req);
   if (!privyId) return NextResponse.json({ error: 'No auth' }, { status: 401 });
 
   const creatureId = parseInt(params.id, 10);

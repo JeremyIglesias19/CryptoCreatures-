@@ -20,12 +20,14 @@ import TeamAnalysisPanel from '@/components/TeamAnalysisPanel';
 import NotificationBell from '@/components/NotificationBell';
 import { CollectionIcon, EggsIcon, MarketIcon, BestiaryIcon, BattleIcon, HistoryIcon, RankingIcon } from '@/components/TabIcons';
 import { CREATURE_POOL, CREATURE_TYPES, ABILITIES, RARITIES, rollQuality, getRarityKey } from '@/lib/gameData';
+import { useApi } from '@/lib/api';
 
 export default function GamePage() {
   const { authenticated, logout, user } = usePrivy();
   const { ready: solanaReady, wallets: solanaWallets, createWallet: createSolanaWallet } = useSolanaWallets();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const api = useApi();
   const { player, creatures, loading, refetch, patchCreature, dailyRemaining, dailyLimit } = usePlayer();
   const { presets: teamPresets, createPreset, deletePreset } = useTeamPresets(user?.id);
   const { connected, authed, emit, on, socketReady } = useSocket();
@@ -204,9 +206,9 @@ export default function GamePage() {
     // Actualiza también la modal si está abierta apuntando a esta criatura
     setDetailCreature(prev => (prev && prev.id === creatureId ? { ...prev, is_favorite: next } : prev));
     try {
-      const res = await fetch(`/api/creatures/${creatureId}/favorite`, {
+      const res = await api(`/api/creatures/${creatureId}/favorite`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', 'x-privy-id': user.id },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ isFavorite: next }),
       });
       if (!res.ok) throw new Error('patch failed');
@@ -588,6 +590,7 @@ function NavChip({ children, title, color = '#a855f7' }) {
 // Modal de detalle de criatura
 // ============================================
 function CreatureDetailModal({ creature, privyId, onClose, onToggleFavorite }) {
+  const api = useApi();
   const types = Array.isArray(creature.types) ? creature.types : [creature.types];
   const attacks = typeof creature.attacks === 'string' ? JSON.parse(creature.attacks) : creature.attacks;
   const abilityData = ABILITIES[creature.ability] || {};
@@ -602,9 +605,7 @@ function CreatureDetailModal({ creature, privyId, onClose, onToggleFavorite }) {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`/api/creatures/${creature.id}/battles`, {
-          headers: { 'x-privy-id': privyId },
-        });
+        const res = await api(`/api/creatures/${creature.id}/battles`);
         if (!res.ok) throw new Error('fetch failed');
         const data = await res.json();
         if (!cancelled) setBattleHistory(data.battles || []);
@@ -616,7 +617,7 @@ function CreatureDetailModal({ creature, privyId, onClose, onToggleFavorite }) {
       }
     })();
     return () => { cancelled = true; };
-  }, [creature?.id, privyId]);
+  }, [creature?.id, privyId, api]);
 
   const TYPE_COLORS = {
     Fuego: '#ef4444', Agua: '#3b82f6', Naturaleza: '#22c55e',

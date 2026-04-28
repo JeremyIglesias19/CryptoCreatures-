@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import CreatureAvatar from './CreatureAvatar';
+import { useApi } from '@/lib/api';
 
 const RARITY_COLORS = {
   'Comun': '#9ca3af', 'Poco Comun': '#22c55e', 'Rara': '#3b82f6',
@@ -13,6 +14,7 @@ const RARITY_GLOW = {
 };
 
 export default function Matchmaking({ selectedTeam, creatures, emit, on, connected, socketReady, privyId }) {
+  const api = useApi();
   const [searching, setSearching] = useState(false);
   const [searchTime, setSearchTime] = useState(0);
   const [dailyRemaining, setDailyRemaining] = useState(null);
@@ -21,11 +23,11 @@ export default function Matchmaking({ selectedTeam, creatures, emit, on, connect
   // Fetch daily battle count
   useEffect(() => {
     if (!privyId) return;
-    fetch('/api/battles?limit=1', { headers: { 'x-privy-id': privyId } })
+    api('/api/battles?limit=1')
       .then(r => r.json())
       .then(data => setDailyRemaining(data.dailyRemaining ?? null))
       .catch(() => {});
-  }, [privyId]);
+  }, [privyId, api]);
 
   useEffect(() => {
     if (!searching) return;

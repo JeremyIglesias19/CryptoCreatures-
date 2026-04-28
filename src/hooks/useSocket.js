@@ -4,7 +4,7 @@ import { io } from 'socket.io-client';
 import { usePrivy } from '@privy-io/react-auth';
 
 export function useSocket() {
-  const { user, authenticated } = usePrivy();
+  const { user, authenticated, getAccessToken } = usePrivy();
   const socketRef = useRef(null);
   const [connected, setConnected] = useState(false);
   const [authed, setAuthed] = useState(false);
@@ -19,10 +19,20 @@ export function useSocket() {
       autoConnect: true,
     });
 
-    socket.on('connect', () => {
+    socket.on('connect', async () => {
       console.log('[useSocket] connected, id:', socket.id);
       setConnected(true);
-      socket.emit('auth', { privyId: user.id });
+
+      // SECURITY: enviamos el JWT de Privy. Antes mandábamos solo user.id (privy_id),
+      // lo que permitía suplantar a cualquier usuario sabiendo su id. El server ahora
+      // verifica el token contra Privy antes de aceptar la conexión.
+      let token = null;
+      try {
+        token = await getAccessToken();
+      } catch (err) {
+        console.error('[useSocket] getAccessToken failed:', err);
+      }
+      socket.emit('auth', { token });
     });
 
     socket.on('auth:success', () => {
@@ -45,7 +55,7 @@ export function useSocket() {
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [authenticated, user]);
+  }, [authenticated, user, getAccessToken]);
 
   const emit = useCallback((event, data) => {
     socketRef.current?.emit(event, data);

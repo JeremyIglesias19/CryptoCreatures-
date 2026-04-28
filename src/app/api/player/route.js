@@ -1,10 +1,11 @@
 import { query } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import { getAuthenticatedPrivyId, getVerifiedSolanaWallet } from '@/lib/privyAuth';
 import { CREATURE_POOL, CREATURE_TYPES, ATTACKS_DB, RARITIES } from '@/lib/gameData';
 
 // GET /api/player - Obtener perfil + criaturas
 export async function GET(req) {
-  const privyId = req.headers.get('x-privy-id');
+  const privyId = await getAuthenticatedPrivyId(req);
   if (!privyId) return NextResponse.json({ error: 'No auth' }, { status: 401 });
 
   const playerRes = await query('SELECT * FROM players WHERE privy_id = $1', [privyId]);
@@ -45,11 +46,15 @@ export async function GET(req) {
     console.warn('[PLAYER] Streak update skipped:', err.message);
   }
 
-  // Update wallet address if provided and not yet saved
-  const walletAddress = req.headers.get('x-wallet-address');
-  if (walletAddress && !player.wallet_address) {
-    await query('UPDATE players SET wallet_address = $1 WHERE id = $2', [walletAddress, player.id]);
-    player.wallet_address = walletAddress;
+  // SECURITY: si el jugador no tiene wallet_address en DB, la obtenemos de Privy
+  // server-side (NO del header del cliente). Antes aceptábamos `x-wallet-address`
+  // del cliente, lo que permitía a un atacante reclamar la wallet de otro usuario.
+  if (!player.wallet_address) {
+    const verifiedWallet = await getVerifiedSolanaWallet(privyId);
+    if (verifiedWallet) {
+      await query('UPDATE players SET wallet_address = $1 WHERE id = $2', [verifiedWallet, player.id]);
+      player.wallet_address = verifiedWallet;
+    }
   }
 
   // Daily battle counter (navbar)
@@ -79,11 +84,17 @@ export async function GET(req) {
 
 // POST /api/player - Crear nuevo jugador + huevos iniciales
 export async function POST(req) {
-  const privyId = req.headers.get('x-privy-id');
+  const privyId = await getAuthenticatedPrivyId(req);
   if (!privyId) return NextResponse.json({ error: 'No auth' }, { status: 401 });
 
   const body = await req.json();
-  const { email, username, walletAddress } = body;
+  const { email, username } = body;
+
+  // SECURITY: el wallet_address NO se acepta del cliente. Se obtiene server-side
+  // de Privy. Antes lo aceptábamos del body, lo que permitía a un atacante
+  // registrar una cuenta reclamando la wallet de otro usuario y luego "cobrar"
+  // las txs que la víctima enviase al escrow.
+  const verifiedWallet = await getVerifiedSolanaWallet(privyId);
 
   // Crear jugador (streak inicial = 1)
   let player;
@@ -91,7 +102,7 @@ export async function POST(req) {
     const insertRes = await query(
       `INSERT INTO players (privy_id, email, username, wallet_address, streak_days, last_active_date)
        VALUES ($1, $2, $3, $4, 1, CURRENT_DATE) RETURNING *`,
-      [privyId, email, username, walletAddress || null]
+      [privyId, email, username, verifiedWallet]
     );
     player = insertRes.rows[0];
   } catch (err) {
@@ -99,7 +110,7 @@ export async function POST(req) {
     console.warn('[PLAYER] Creación sin columnas streak:', err.message);
     const insertRes = await query(
       'INSERT INTO players (privy_id, email, username, wallet_address) VALUES ($1, $2, $3, $4) RETURNING *',
-      [privyId, email, username, walletAddress || null]
+      [privyId, email, username, verifiedWallet]
     );
     player = insertRes.rows[0];
   }

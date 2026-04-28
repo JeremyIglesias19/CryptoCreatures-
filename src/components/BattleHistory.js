@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import CreatureAvatar from './CreatureAvatar';
+import { useApi } from '@/lib/api';
 
 const RARITY_COLORS = {
   'Comun': '#9ca3af', 'Poco Comun': '#22c55e', 'Rara': '#3b82f6',
@@ -8,32 +9,36 @@ const RARITY_COLORS = {
 };
 
 export default function BattleHistory({ privyId }) {
+  const api = useApi();
   const [battles, setBattles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
+  const [totalWins, setTotalWins] = useState(0);
+  const [totalLosses, setTotalLosses] = useState(0);
   const [expanded, setExpanded] = useState(null);
 
   const fetchHistory = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/battles?page=${page}&limit=15`, {
-        headers: { 'x-privy-id': privyId },
-      });
+      const res = await api(`/api/battles?page=${page}&limit=15`);
       const data = await res.json();
       setBattles(data.battles || []);
       setTotalPages(data.totalPages || 1);
       setTotal(data.total || 0);
+      // Wins/losses agregados de todas las páginas (no solo la visible)
+      setTotalWins(data.totalWins || 0);
+      setTotalLosses(data.totalLosses || 0);
     } catch (err) { console.error(err); }
     setLoading(false);
-  }, [page, privyId]);
+  }, [page, privyId, api]);
 
   useEffect(() => { fetchHistory(); }, [fetchHistory]);
 
-  // Stats summary
-  const wins = battles.filter(b => b.won).length;
-  const losses = battles.length - wins;
+  // Stats summary (totales reales de la DB, no de la página actual)
+  const wins = totalWins;
+  const losses = totalLosses;
 
   const formatDate = (dateStr) => {
     const d = new Date(dateStr);

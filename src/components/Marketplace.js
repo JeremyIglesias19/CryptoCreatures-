@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import CreatureAvatar from './CreatureAvatar';
 import { ABILITIES, RARITIES, rollQuality, getRarityKey } from '@/lib/gameData';
+import { useApi } from '@/lib/api';
 
 const TYPE_COLORS = {
   Fuego: '#ef4444', Agua: '#3b82f6', Naturaleza: '#22c55e',
@@ -32,13 +33,12 @@ export default function Marketplace({ player, creatures, privyId, solanaWallet, 
   const [sellModal, setSellModal] = useState(null);
   const [detailListing, setDetailListing] = useState(null);
   const [buyLoading, setBuyLoading] = useState(false);
+  const api = useApi();
 
   const showToast = (msg, type = 'info') => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3500);
   };
-
-  const headers = { 'x-privy-id': privyId };
 
   // Fetch listings
   const fetchListings = useCallback(async (mine = false) => {
@@ -49,12 +49,12 @@ export default function Marketplace({ player, creatures, privyId, solanaWallet, 
       if (filterRarity !== 'all') params.set('rarity', filterRarity);
       params.set('type', 'fixed');
 
-      const res = await fetch(`/api/marketplace/listings?${params}`, { headers });
+      const res = await api(`/api/marketplace/listings?${params}`);
       const data = await res.json();
       setListings(data.listings || []);
     } catch (err) { console.error(err); }
     setLoadingListings(false);
-  }, [sortBy, filterRarity, subTab, privyId]);
+  }, [sortBy, filterRarity, subTab, privyId, api]);
 
   useEffect(() => {
     fetchListings(subTab === 'my_listings');
@@ -63,8 +63,8 @@ export default function Marketplace({ player, creatures, privyId, solanaWallet, 
   // ============ CREATE LISTING ============
   const handleCreateListing = async (creatureId, listingType, priceSol, minBidSol, durationHours) => {
     try {
-      const res = await fetch('/api/marketplace/listings', {
-        method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
+      const res = await api('/api/marketplace/listings', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ creatureId, listingType, priceSol, minBidSol, durationHours }),
       });
       const data = await res.json();
@@ -79,8 +79,8 @@ export default function Marketplace({ player, creatures, privyId, solanaWallet, 
   // ============ CANCEL LISTING ============
   const handleCancel = async (listingId) => {
     try {
-      const res = await fetch('/api/marketplace/listings', {
-        method: 'DELETE', headers: { ...headers, 'Content-Type': 'application/json' },
+      const res = await api('/api/marketplace/listings', {
+        method: 'DELETE', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ listingId }),
       });
       const data = await res.json();
@@ -123,9 +123,11 @@ export default function Marketplace({ player, creatures, privyId, solanaWallet, 
       const txSignature = await solanaWallet.sendTransaction(tx, conn);
 
       // Notify server
-      const res = await fetch('/api/marketplace/buy', {
-        method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ listingId: listing.id, txSignature: String(txSignature), walletAddress }),
+      // walletAddress eliminado del body — el server usa solo buyer.wallet_address
+      // de DB para evitar hijack vía tx_signature ajena. Ver buy/route.js.
+      const res = await api('/api/marketplace/buy', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ listingId: listing.id, txSignature: String(txSignature) }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);

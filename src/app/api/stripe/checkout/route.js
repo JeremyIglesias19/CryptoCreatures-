@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { getAuthenticatedPrivyId } from '@/lib/privyAuth';
 import { query } from '@/lib/db';
 import {
   getStripe,
@@ -13,7 +14,7 @@ import {
 // Devuelve { url } al que redirigimos al usuario.
 export async function POST(req) {
   try {
-    const privyId = req.headers.get('x-privy-id');
+    const privyId = await getAuthenticatedPrivyId(req);
     if (!privyId) {
       return NextResponse.json({ error: 'No auth' }, { status: 401 });
     }

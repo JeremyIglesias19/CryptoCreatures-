@@ -1,5 +1,6 @@
 import { query } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import { getAuthenticatedPrivyId } from '@/lib/privyAuth';
 
 // GET /api/marketplace/listings - Browse marketplace
 export async function GET(req) {
@@ -8,7 +9,7 @@ export async function GET(req) {
   const rarity = url.searchParams.get('rarity') || 'all';
   const sort = url.searchParams.get('sort') || 'newest'; // newest, price_asc, price_desc, ending_soon
   const myListings = url.searchParams.get('mine') === 'true';
-  const privyId = req.headers.get('x-privy-id');
+  const privyId = await getAuthenticatedPrivyId(req);
 
   let conditions = ["ml.status = 'active'"];
   let params = [];
@@ -71,7 +72,7 @@ export async function GET(req) {
 
 // POST /api/marketplace/listings - Create a new listing
 export async function POST(req) {
-  const privyId = req.headers.get('x-privy-id');
+  const privyId = await getAuthenticatedPrivyId(req);
   if (!privyId) return NextResponse.json({ error: 'No auth' }, { status: 401 });
 
   const body = await req.json();
@@ -131,7 +132,7 @@ export async function POST(req) {
 
 // DELETE /api/marketplace/listings - Cancel a listing
 export async function DELETE(req) {
-  const privyId = req.headers.get('x-privy-id');
+  const privyId = await getAuthenticatedPrivyId(req);
   if (!privyId) return NextResponse.json({ error: 'No auth' }, { status: 401 });
 
   const body = await req.json();

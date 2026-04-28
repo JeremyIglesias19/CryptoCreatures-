@@ -1,5 +1,6 @@
 import { query } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import { getAuthenticatedPrivyId } from '@/lib/privyAuth';
 
 // PATCH /api/creatures/:id/favorite  { isFavorite?: boolean }
 // Set or toggle the favorite flag. Solo el dueño puede modificarlo.
@@ -11,7 +12,7 @@ import { NextResponse } from 'next/server';
 //
 // De 3 queries a 1 → ~3x menos carga en DB bajo spam.
 export async function PATCH(req, { params }) {
-  const privyId = req.headers.get('x-privy-id');
+  const privyId = await getAuthenticatedPrivyId(req);
   if (!privyId) return NextResponse.json({ error: 'No auth' }, { status: 401 });
 
   const creatureId = parseInt(params.id, 10);

@@ -1,9 +1,10 @@
 import { query } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import { getAuthenticatedPrivyId } from '@/lib/privyAuth';
 
 // GET /api/marketplace/trades - Get trade proposals for current player
 export async function GET(req) {
-  const privyId = req.headers.get('x-privy-id');
+  const privyId = await getAuthenticatedPrivyId(req);
   if (!privyId) return NextResponse.json({ error: 'No auth' }, { status: 401 });
 
   try {
@@ -45,7 +46,7 @@ export async function GET(req) {
 
 // POST /api/marketplace/trades - Create a trade proposal
 export async function POST(req) {
-  const privyId = req.headers.get('x-privy-id');
+  const privyId = await getAuthenticatedPrivyId(req);
   if (!privyId) return NextResponse.json({ error: 'No auth' }, { status: 401 });
 
   const { myCreatureId, targetCreatureId, message } = await req.json();
@@ -110,7 +111,7 @@ export async function POST(req) {
 
 // PUT /api/marketplace/trades - Accept or reject a trade
 export async function PUT(req) {
-  const privyId = req.headers.get('x-privy-id');
+  const privyId = await getAuthenticatedPrivyId(req);
   if (!privyId) return NextResponse.json({ error: 'No auth' }, { status: 401 });
 
   const { tradeId, action } = await req.json(); // action: 'accept' | 'reject'

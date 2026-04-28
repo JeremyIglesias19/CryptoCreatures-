@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import CreatureAvatar from './CreatureAvatar';
 import { ABILITIES, RARITIES, rollQuality, getRarityKey } from '@/lib/gameData';
+import { useApi } from '@/lib/api';
 
 const RARITY_COLORS = {
   'Comun': '#9ca3af', 'Poco Comun': '#22c55e', 'Rara': '#3b82f6',
@@ -118,6 +119,7 @@ function Tooltip({ show, x, y, children }) {
 const EGG_PRICE_EUR = 5;
 
 export default function EggShop({ player, onPurchase, claimSessionId, onClaimHandled }) {
+  const api = useApi();
   const [opening, setOpening] = useState(false);
   const [phase, setPhase] = useState('idle');
   const [revealedCreature, setRevealedCreature] = useState(null);
@@ -263,12 +265,9 @@ export default function EggShop({ player, onPurchase, claimSessionId, onClaimHan
     setConfirmOpen(false);
     setCheckoutLoading(true);
     try {
-      const res = await fetch('/api/stripe/checkout', {
+      const res = await api('/api/stripe/checkout', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-privy-id': player.privy_id,
-        },
+        headers: { 'Content-Type': 'application/json' },
       });
       const data = await res.json();
       if (!res.ok || !data.url) {
@@ -306,12 +305,9 @@ export default function EggShop({ player, onPurchase, claimSessionId, onClaimHan
 
     for (let i = 0; i < maxAttempts; i++) {
       try {
-        const res = await fetch('/api/eggs/claim', {
+        const res = await api('/api/eggs/claim', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-privy-id': player.privy_id,
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ sessionId }),
         });
         const data = await res.json();

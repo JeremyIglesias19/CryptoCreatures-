@@ -1,5 +1,6 @@
 import { query } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import { getAuthenticatedPrivyId } from '@/lib/privyAuth';
 
 // ============================================
 // PATCH /api/notifications/:id
@@ -8,7 +9,7 @@ import { NextResponse } from 'next/server';
 // ============================================
 
 export async function PATCH(req, { params }) {
-  const privyId = req.headers.get('x-privy-id');
+  const privyId = await getAuthenticatedPrivyId(req);
   if (!privyId) return NextResponse.json({ error: 'No auth' }, { status: 401 });
 
   const notifId = Number.parseInt(params.id, 10);

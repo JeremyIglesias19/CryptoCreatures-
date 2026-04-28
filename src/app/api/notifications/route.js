@@ -1,5 +1,6 @@
 import { query } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import { getAuthenticatedPrivyId } from '@/lib/privyAuth';
 
 // ============================================
 // GET /api/notifications?limit=20
@@ -14,7 +15,7 @@ const MAX_LIMIT = 50;
 const DEFAULT_LIMIT = 20;
 
 export async function GET(req) {
-  const privyId = req.headers.get('x-privy-id');
+  const privyId = await getAuthenticatedPrivyId(req);
   if (!privyId) return NextResponse.json({ error: 'No auth' }, { status: 401 });
 
   const playerRes = await query('SELECT id FROM players WHERE privy_id = $1', [privyId]);

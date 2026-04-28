@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { getAuthenticatedPrivyId } from '@/lib/privyAuth';
 import { query } from '@/lib/db';
 
 // POST /api/eggs/claim
@@ -11,7 +12,7 @@ import { query } from '@/lib/db';
 //   - status "failed"  -> pago fallido
 export async function POST(req) {
   try {
-    const privyId = req.headers.get('x-privy-id');
+    const privyId = await getAuthenticatedPrivyId(req);
     if (!privyId) {
       return NextResponse.json({ error: 'No auth' }, { status: 401 });
     }

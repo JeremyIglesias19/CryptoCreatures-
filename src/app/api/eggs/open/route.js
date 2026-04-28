@@ -1,5 +1,6 @@
 import { query } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import { getAuthenticatedPrivyId } from '@/lib/privyAuth';
 import { generateCreature } from '../../player/route';
 import { RARITIES } from '@/lib/gameData';
 import { verifyTransaction } from '@/lib/solana';
@@ -7,14 +8,14 @@ import { verifyTransaction } from '@/lib/solana';
 const EGG_PRICE_EUR = 5;
 
 export async function POST(req) {
-  const privyId = req.headers.get('x-privy-id');
+  const privyId = await getAuthenticatedPrivyId(req);
   if (!privyId) return NextResponse.json({ error: 'No auth' }, { status: 401 });
 
   const body = await req.json().catch(() => ({}));
-  const { txSignature, walletAddress, priceSOL } = body;
+  const { txSignature, priceSOL } = body;
 
-  if (!txSignature || !walletAddress || !priceSOL) {
-    return NextResponse.json({ error: 'Missing txSignature, walletAddress, or priceSOL' }, { status: 400 });
+  if (!txSignature || !priceSOL) {
+    return NextResponse.json({ error: 'Missing txSignature or priceSOL' }, { status: 400 });
   }
 
   // Obtener jugador
@@ -22,13 +23,18 @@ export async function POST(req) {
   if (playerRes.rows.length === 0) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   const player = playerRes.rows[0];
 
-  // Update wallet address if different
-  if (walletAddress !== player.wallet_address) {
-    await query('UPDATE players SET wallet_address = $1 WHERE id = $2', [walletAddress, player.id]);
+  // SECURITY: usamos solo player.wallet_address de DB. Antes aceptábamos
+  // walletAddress del body y lo sobrescribía en DB, permitiendo hijack
+  // de tx_signature de otros usuarios. Mismo patrón que el fix de marketplace/buy.
+  if (!player.wallet_address) {
+    return NextResponse.json({
+      error: 'Wallet not linked to your account. Please re-login.',
+    }, { status: 400 });
   }
+  const senderAddress = player.wallet_address;
 
   // Verify the Solana transaction
-  const verification = await verifyTransaction(txSignature, walletAddress, parseFloat(priceSOL));
+  const verification = await verifyTransaction(txSignature, senderAddress, parseFloat(priceSOL));
   if (!verification.valid) {
     return NextResponse.json({ error: `Transaction verification failed: ${verification.error}` }, { status: 400 });
   }

@@ -1,11 +1,12 @@
 import { query } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import { getAuthenticatedPrivyId } from '@/lib/privyAuth';
 
 // DELETE /api/team-presets/:id
 // Elimina un preset. Solo el dueño puede borrarlo.
 // Implementación: un solo DELETE con JOIN a players para authz atómica.
 export async function DELETE(req, { params }) {
-  const privyId = req.headers.get('x-privy-id');
+  const privyId = await getAuthenticatedPrivyId(req);
   if (!privyId) return NextResponse.json({ error: 'No auth' }, { status: 401 });
 
   const presetId = Number.parseInt(params.id, 10);

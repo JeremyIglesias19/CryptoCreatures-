@@ -44,11 +44,13 @@ CREATE TABLE IF NOT EXISTS creatures (
 );
 
 -- Batallas (historial completo)
+-- ON DELETE SET NULL en las FKs: si se borra un jugador, sus batallas se
+-- conservan con la referencia a NULL. Los teams están en JSONB para histórico.
 CREATE TABLE IF NOT EXISTS battles (
   id            SERIAL PRIMARY KEY,
-  player1_id    INT REFERENCES players(id),
-  player2_id    INT REFERENCES players(id),
-  winner_id     INT REFERENCES players(id),
+  player1_id    INT REFERENCES players(id) ON DELETE SET NULL,
+  player2_id    INT REFERENCES players(id) ON DELETE SET NULL,
+  winner_id     INT REFERENCES players(id) ON DELETE SET NULL,
   status        VARCHAR(20) DEFAULT 'active',     -- active, finished, abandoned
   battle_log    JSONB,                             -- Log completo de la batalla
   player1_team  JSONB,                             -- Equipo del jugador 1 (snapshot)

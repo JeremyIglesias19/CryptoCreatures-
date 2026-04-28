@@ -1,16 +1,22 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
+import { useApi } from '@/lib/api';
 
 // ============================================
 // useNotifications(privyId, on)
 //  - Carga inicial + polling cada 60s + refetch al volver a la pestaña
 //  - Escucha 'notif:new' del socket para realtime push (desde server/index.js)
 //  - markRead / markAllRead son optimistas con rollback implícito vía refetch
+//
+// privyId queda como parámetro para mantener la firma del hook (sigue siendo
+// el id que recibe el componente padre), pero la auth real va vía JWT en el
+// header Authorization gestionado por useApi.
 // ============================================
 
 const POLL_INTERVAL_MS = 60_000;
 
 export function useNotifications(privyId, on) {
+  const api = useApi();
   const [notifications, setNotifications] = useState([]);
   const [unread, setUnread] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -19,9 +25,7 @@ export function useNotifications(privyId, on) {
     if (!privyId) return;
     setLoading(true);
     try {
-      const res = await fetch('/api/notifications?limit=20', {
-        headers: { 'x-privy-id': privyId },
-      });
+      const res = await api('/api/notifications?limit=20');
       if (res.ok) {
         const data = await res.json();
         setNotifications(Array.isArray(data.notifications) ? data.notifications : []);
@@ -32,7 +36,7 @@ export function useNotifications(privyId, on) {
     } finally {
       setLoading(false);
     }
-  }, [privyId]);
+  }, [privyId, api]);
 
   // Carga inicial + polling + refresh al volver a la pestaña
   useEffect(() => {
@@ -78,16 +82,13 @@ export function useNotifications(privyId, on) {
     }));
     if (wasUnread) setUnread(u => Math.max(0, u - 1));
     try {
-      await fetch(`/api/notifications/${id}`, {
-        method: 'PATCH',
-        headers: { 'x-privy-id': privyId },
-      });
+      await api(`/api/notifications/${id}`, { method: 'PATCH' });
     } catch (err) {
       console.error('[useNotifications] markRead:', err.message);
       // Rollback via refetch para recuperar estado real
       fetchNotifs();
     }
-  }, [privyId, fetchNotifs]);
+  }, [privyId, api, fetchNotifs]);
 
   const markAllRead = useCallback(async () => {
     if (!privyId) return;
@@ -95,15 +96,12 @@ export function useNotifications(privyId, on) {
     setNotifications(prev => prev.map(n => n.read_at ? n : { ...n, read_at: now }));
     setUnread(0);
     try {
-      await fetch('/api/notifications/read-all', {
-        method: 'POST',
-        headers: { 'x-privy-id': privyId },
-      });
+      await api('/api/notifications/read-all', { method: 'POST' });
     } catch (err) {
       console.error('[useNotifications] markAllRead:', err.message);
       fetchNotifs();
     }
-  }, [privyId, fetchNotifs]);
+  }, [privyId, api, fetchNotifs]);
 
   return { notifications, unread, loading, markRead, markAllRead, refetch: fetchNotifs };
 }

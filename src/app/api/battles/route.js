@@ -1,9 +1,10 @@
 import { query } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import { getAuthenticatedPrivyId } from '@/lib/privyAuth';
 
 // GET /api/battles - Get battle history for a player
 export async function GET(req) {
-  const privyId = req.headers.get('x-privy-id');
+  const privyId = await getAuthenticatedPrivyId(req);
   if (!privyId) return NextResponse.json({ error: 'No auth' }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
@@ -17,12 +18,19 @@ export async function GET(req) {
     if (playerRes.rows.length === 0) return NextResponse.json({ error: 'Player not found' }, { status: 404 });
     const playerId = playerRes.rows[0].id;
 
-    // Get total count
+    // Get total count + wins/losses agregados (todas las páginas, no solo la visible)
     const countRes = await query(
-      'SELECT COUNT(*) FROM battles WHERE (player1_id = $1 OR player2_id = $1) AND status = $2',
+      `SELECT
+         COUNT(*)::int AS total,
+         COUNT(*) FILTER (WHERE winner_id = $1)::int AS wins,
+         COUNT(*) FILTER (WHERE winner_id IS NOT NULL AND winner_id <> $1)::int AS losses
+       FROM battles
+       WHERE (player1_id = $1 OR player2_id = $1) AND status = $2`,
       [playerId, 'finished']
     );
-    const total = parseInt(countRes.rows[0].count);
+    const total = countRes.rows[0].total;
+    const totalWins = countRes.rows[0].wins;
+    const totalLosses = countRes.rows[0].losses;
 
     // Get battles with player usernames + ELO at battle time
     const battlesRes = await query(`
@@ -78,6 +86,8 @@ export async function GET(req) {
     return NextResponse.json({
       battles,
       total,
+      totalWins,
+      totalLosses,
       page,
       totalPages: Math.ceil(total / limit),
       dailyBattles,

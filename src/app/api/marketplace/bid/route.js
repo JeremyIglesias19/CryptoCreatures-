@@ -1,13 +1,14 @@
 import { query } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import { getAuthenticatedPrivyId } from '@/lib/privyAuth';
 import { verifyTransaction, sendSOLFromEscrow, calculateFees } from '@/lib/solana';
 
 // POST /api/marketplace/bid - Place a bid on an auction
 export async function POST(req) {
-  const privyId = req.headers.get('x-privy-id');
+  const privyId = await getAuthenticatedPrivyId(req);
   if (!privyId) return NextResponse.json({ error: 'No auth' }, { status: 401 });
 
-  const { listingId, bidAmountSol, txSignature, walletAddress } = await req.json();
+  const { listingId, bidAmountSol, txSignature } = await req.json();
   if (!listingId || !bidAmountSol || !txSignature) {
     return NextResponse.json({ error: 'Missing fields' }, { status: 400 });
   }
@@ -17,11 +18,14 @@ export async function POST(req) {
     if (playerRes.rows.length === 0) return NextResponse.json({ error: 'Player not found' }, { status: 404 });
     const bidder = playerRes.rows[0];
 
-    // Update wallet address in DB if provided and different
-    const senderAddress = walletAddress || bidder.wallet_address;
-    if (walletAddress && walletAddress !== bidder.wallet_address) {
-      await query('UPDATE players SET wallet_address = $1 WHERE id = $2', [walletAddress, bidder.id]);
+    // SECURITY: usamos solo bidder.wallet_address de DB. NO aceptamos walletAddress
+    // del request body porque permitiría hijack de tx_signature (ver buy/route.js).
+    if (!bidder.wallet_address) {
+      return NextResponse.json({
+        error: 'Wallet not linked to your account. Please re-login.',
+      }, { status: 400 });
     }
+    const senderAddress = bidder.wallet_address;
 
     // Get auction listing
     const listingRes = await query(
@@ -103,7 +107,7 @@ export async function POST(req) {
 
 // POST /api/marketplace/bid/claim - Claim an expired auction (winner or seller)
 export async function PUT(req) {
-  const privyId = req.headers.get('x-privy-id');
+  const privyId = await getAuthenticatedPrivyId(req);
   if (!privyId) return NextResponse.json({ error: 'No auth' }, { status: 401 });
 
   const { listingId } = await req.json();

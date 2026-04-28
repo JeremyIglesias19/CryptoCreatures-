@@ -1,10 +1,13 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
+import { useApi } from '@/lib/api';
 
 // Hook para gestionar los presets de equipo del jugador autenticado.
 // Uso: const { presets, createPreset, deletePreset, refetch } = useTeamPresets(privyId);
+// Auth real va vía JWT (useApi); privyId solo se usa como gate "hay sesión activa".
 
 export function useTeamPresets(privyId) {
+  const api = useApi();
   const [presets, setPresets] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -14,9 +17,7 @@ export function useTeamPresets(privyId) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/team-presets', {
-        headers: { 'x-privy-id': privyId },
-      });
+      const res = await api('/api/team-presets');
       if (res.ok) {
         const data = await res.json();
         setPresets(data.presets || []);
@@ -29,16 +30,16 @@ export function useTeamPresets(privyId) {
     } finally {
       setLoading(false);
     }
-  }, [privyId]);
+  }, [privyId, api]);
 
   useEffect(() => { fetchPresets(); }, [fetchPresets]);
 
   const createPreset = useCallback(async (name, creatureIds) => {
     if (!privyId) return { error: 'Not authed' };
     try {
-      const res = await fetch('/api/team-presets', {
+      const res = await api('/api/team-presets', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-privy-id': privyId },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, creatureIds }),
       });
       const data = await res.json();
@@ -48,7 +49,7 @@ export function useTeamPresets(privyId) {
     } catch (err) {
       return { error: err.message };
     }
-  }, [privyId]);
+  }, [privyId, api]);
 
   const deletePreset = useCallback(async (presetId) => {
     if (!privyId) return { error: 'Not authed' };
@@ -56,10 +57,7 @@ export function useTeamPresets(privyId) {
     const prev = presets;
     setPresets(p => p.filter(x => x.id !== presetId));
     try {
-      const res = await fetch(`/api/team-presets/${presetId}`, {
-        method: 'DELETE',
-        headers: { 'x-privy-id': privyId },
-      });
+      const res = await api(`/api/team-presets/${presetId}`, { method: 'DELETE' });
       if (!res.ok) {
         setPresets(prev); // rollback
         const data = await res.json().catch(() => ({}));
@@ -70,7 +68,7 @@ export function useTeamPresets(privyId) {
       setPresets(prev); // rollback
       return { error: err.message };
     }
-  }, [privyId, presets]);
+  }, [privyId, presets, api]);
 
   return { presets, loading, error, createPreset, deletePreset, refetch: fetchPresets };
 }

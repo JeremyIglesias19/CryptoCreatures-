@@ -7,11 +7,42 @@ require('dotenv').config();
 const http = require('http');
 const { Server } = require('socket.io');
 const { Pool } = require('pg');
+const { PrivyClient } = require('@privy-io/server-auth');
 const { CombatEngine } = require('./combatEngine');
 const { Matchmaker } = require('./matchmaker');
 
 const PORT = process.env.WS_PORT || 3001;
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+// ============================================
+// Privy auth verification (compartido en lógica con src/lib/privyAuth.js).
+// El cliente envía su access token de Privy en el evento `auth`.
+// Verificamos el JWT y extraemos el userId (privy_id).
+// ============================================
+let privyClient = null;
+function getPrivyClient() {
+  if (privyClient) return privyClient;
+  const appId = process.env.PRIVY_APP_ID || process.env.NEXT_PUBLIC_PRIVY_APP_ID;
+  const appSecret = process.env.PRIVY_APP_SECRET;
+  if (!appId || !appSecret) {
+    console.error('[AUTH] PRIVY_APP_ID o PRIVY_APP_SECRET no están seteadas — todos los sockets fallarán');
+    return null;
+  }
+  privyClient = new PrivyClient(appId, appSecret);
+  return privyClient;
+}
+
+async function verifyPrivyToken(token) {
+  if (!token || typeof token !== 'string') return null;
+  const client = getPrivyClient();
+  if (!client) return null;
+  try {
+    const claims = await client.verifyAuthToken(token);
+    return claims.userId || null;
+  } catch (err) {
+    return null;
+  }
+}
 
 const server = http.createServer((req, res) => {
   if (req.url === '/health') {
@@ -202,12 +233,25 @@ io.on('connection', (socket) => {
 
   socket.on('auth', async (data) => {
     try {
-      const { privyId } = data;
-      const result = await pool.query('SELECT id, username, elo FROM players WHERE privy_id = $1', [privyId]);
+      // SECURITY: el cliente envía su Privy access token (JWT). Antes aceptábamos
+      // el privy_id directo, lo que permitía suplantar a cualquier usuario solo
+      // sabiendo su privy_id. Ahora verificamos el JWT contra Privy y extraemos
+      // el userId del token verificado.
+      const { token } = data || {};
+      const verifiedPrivyId = await verifyPrivyToken(token);
+      if (!verifiedPrivyId) {
+        return socket.emit('error', { message: 'Auth inválida o expirada' });
+      }
+
+      const result = await pool.query(
+        'SELECT id, username, elo FROM players WHERE privy_id = $1',
+        [verifiedPrivyId]
+      );
       if (result.rows.length === 0) return socket.emit('error', { message: 'Jugador no encontrado' });
       playerId = result.rows[0].id;
       socket.playerId = playerId;
       socket.playerData = result.rows[0];
+      socket.privyId = verifiedPrivyId;
       // Room personal para push de notificaciones (io.to('user:123').emit(...))
       socket.join(`user:${playerId}`);
       socket.emit('auth:success', { playerId, username: result.rows[0].username });

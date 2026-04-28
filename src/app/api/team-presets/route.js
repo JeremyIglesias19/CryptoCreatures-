@@ -1,5 +1,6 @@
 import { query } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import { getAuthenticatedPrivyId } from '@/lib/privyAuth';
 
 // ============================================
 // Team Presets API
@@ -23,7 +24,7 @@ async function resolvePlayer(privyId) {
 // GET /api/team-presets
 // Devuelve la lista de presets del jugador autenticado.
 export async function GET(req) {
-  const privyId = req.headers.get('x-privy-id');
+  const privyId = await getAuthenticatedPrivyId(req);
   if (!privyId) return NextResponse.json({ error: 'No auth' }, { status: 401 });
 
   const player = await resolvePlayer(privyId);
@@ -42,7 +43,7 @@ export async function GET(req) {
 // POST /api/team-presets  { name: string, creatureIds: number[] (len=3) }
 // Crea un preset nuevo (o 409 si ya tenías uno con el mismo nombre).
 export async function POST(req) {
-  const privyId = req.headers.get('x-privy-id');
+  const privyId = await getAuthenticatedPrivyId(req);
   if (!privyId) return NextResponse.json({ error: 'No auth' }, { status: 401 });
 
   let body;
