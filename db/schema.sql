@@ -9,7 +9,9 @@ CREATE TABLE IF NOT EXISTS players (
   privy_id      VARCHAR(255) UNIQUE NOT NULL,   -- ID de Privy (Google login)
   wallet_address VARCHAR(64),                    -- Wallet Solana generada por Privy
   username      VARCHAR(32) UNIQUE,
-  avatar_url    TEXT,
+  avatar_url    TEXT,                            -- Legacy (Google avatar de Privy)
+  avatar_creature_id INT,                        -- Criatura elegida como avatar (FK a creatures, lazy)
+  username_changed_at TIMESTAMP,                  -- Última vez que cambió de username (cooldown 30d)
   email         VARCHAR(255),
   energy        INT DEFAULT 10,                  -- Energía diaria para combates
   energy_reset  TIMESTAMP DEFAULT NOW(),
@@ -37,6 +39,7 @@ CREATE TABLE IF NOT EXISTS creatures (
   attacks       JSONB NOT NULL,                   -- Array de {name, type, power, accuracy, effect, effectChance}
   img_seed      VARCHAR(32),                      -- Seed para generar la imagen consistentemente
   mint_address  VARCHAR(64),                      -- Dirección del NFT en Solana (null si no minteado)
+  preferred_role VARCHAR(20),                     -- Rol preferido aleatorio: aggressive/kiter/flanker/hybrid (Lote 6)
   wins          INT DEFAULT 0,
   losses        INT DEFAULT 0,
   is_favorite   BOOLEAN DEFAULT false,             -- Marcada como favorita por su dueño

@@ -57,12 +57,12 @@ export async function POST(req) {
 
   // Guardar en BD
   const res = await query(
-    `INSERT INTO creatures (owner_id, name, rarity, types, hp, atk, def, spd, ability, attacks, img_seed)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+    `INSERT INTO creatures (owner_id, name, rarity, types, hp, atk, def, spd, ability, attacks, img_seed, preferred_role)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
     [player.id, creature.name, creature.rarity, creature.types,
      creature.hp, creature.atk, creature.def, creature.spd,
      creature.ability, JSON.stringify(creature.attacks),
-     creature.imgSeed]
+     creature.imgSeed, creature.preferred_role]
   );
 
   // Record the egg purchase transaction

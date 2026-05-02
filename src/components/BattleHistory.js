@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import CreatureAvatar from './CreatureAvatar';
 import { useApi } from '@/lib/api';
 
@@ -117,6 +118,7 @@ export default function BattleHistory({ privyId }) {
 
 // Individual battle row
 function BattleRow({ battle, expanded, onToggle, formatDate }) {
+  const router = useRouter();
   const myTeam = Array.isArray(battle.myTeam) ? battle.myTeam : [];
   const opponentTeam = Array.isArray(battle.opponentTeam) ? battle.opponentTeam : [];
 
@@ -141,7 +143,19 @@ function BattleRow({ battle, expanded, onToggle, formatDate }) {
         {/* Battle info */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-0.5">
-            <span className="text-[14px] font-bold text-white truncate">vs {battle.opponentName}</span>
+            <span className="text-[14px] font-bold text-white truncate">
+              vs{' '}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (battle.opponentName) router.push(`/profile/${encodeURIComponent(battle.opponentName)}`);
+                }}
+                className="hover:text-purple-300 hover:underline transition"
+                title={`Ver perfil de ${battle.opponentName}`}
+              >
+                {battle.opponentName}
+              </button>
+            </span>
             <span className="text-[10px] text-gray-600">ELO {battle.opponentElo}</span>
           </div>
           <div className="flex items-center gap-3 text-[11px] text-gray-500">

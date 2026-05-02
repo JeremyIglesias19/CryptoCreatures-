@@ -140,8 +140,8 @@ async function mintCreatureForSession(sessionId, playerId) {
 
   // Insertar criatura
   const insertRes = await query(
-    `INSERT INTO creatures (owner_id, name, rarity, types, hp, atk, def, spd, ability, attacks, img_seed)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+    `INSERT INTO creatures (owner_id, name, rarity, types, hp, atk, def, spd, ability, attacks, img_seed, preferred_role)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
     [
       playerId,
       creature.name,
@@ -154,6 +154,7 @@ async function mintCreatureForSession(sessionId, playerId) {
       creature.ability,
       JSON.stringify(creature.attacks),
       creature.imgSeed,
+      creature.preferred_role,
     ]
   );
   const createdCreature = insertRes.rows[0];

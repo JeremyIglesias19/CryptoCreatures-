@@ -18,6 +18,7 @@ import BattleHistory from '@/components/BattleHistory';
 import TeamPresetsBar from '@/components/TeamPresetsBar';
 import TeamAnalysisPanel from '@/components/TeamAnalysisPanel';
 import NotificationBell from '@/components/NotificationBell';
+import ProfileEditModal from '@/components/ProfileEditModal';
 import { CollectionIcon, EggsIcon, MarketIcon, BestiaryIcon, BattleIcon, HistoryIcon, RankingIcon } from '@/components/TabIcons';
 import { CREATURE_POOL, CREATURE_TYPES, ABILITIES, RARITIES, rollQuality, getRarityKey } from '@/lib/gameData';
 import { useApi } from '@/lib/api';
@@ -43,6 +44,12 @@ export default function GamePage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [detailCreature, setDetailCreature] = useState(null);
   const [claimSessionId, setClaimSessionId] = useState(null);
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
+
+  // Encontrar la criatura del avatar elegido (si existe y aún la posee el usuario)
+  const avatarCreature = (player?.avatar_creature_id != null)
+    ? creatures.find(c => c.id === player.avatar_creature_id)
+    : null;
 
   // Detectar retorno desde Stripe Checkout
   useEffect(() => {
@@ -296,8 +303,31 @@ export default function GamePage() {
             markAllRead={markAllRead}
           />
 
-          {/* Username */}
-          <span className="text-[13px] text-gray-300 font-medium hidden md:inline max-w-[120px] truncate">{player.username}</span>
+          {/* Avatar + Username (clickable → abre modal de edición) */}
+          <button
+            onClick={() => setProfileModalOpen(true)}
+            className="flex items-center gap-2 group"
+            title="Editar perfil"
+          >
+            {avatarCreature ? (
+              <CreatureAvatar
+                name={avatarCreature.name}
+                types={avatarCreature.types}
+                rarity={avatarCreature.rarity}
+                size={32}
+              />
+            ) : (
+              <div
+                className="w-8 h-8 rounded-lg flex items-center justify-center font-extrabold text-white text-[14px]"
+                style={{ background: 'linear-gradient(135deg, #a855f7, #6366f1)' }}
+              >
+                {(player.username || '?').slice(0, 1).toUpperCase()}
+              </div>
+            )}
+            <span className="text-[13px] text-gray-300 group-hover:text-white font-medium hidden md:inline max-w-[120px] truncate transition">
+              {player.username}
+            </span>
+          </button>
 
           {/* CTA JUGAR (ocultado si ya estás en combate) */}
           {tab !== 'battle' && (
@@ -564,6 +594,15 @@ export default function GamePage() {
           onToggleFavorite={() => handleToggleFavorite(detailCreature.id)}
         />
       )}
+
+      {/* ===== PROFILE EDIT MODAL ===== */}
+      <ProfileEditModal
+        player={player}
+        creatures={creatures}
+        open={profileModalOpen}
+        onClose={() => setProfileModalOpen(false)}
+        onSaved={() => refetch()}
+      />
     </div>
   );
 }
@@ -824,12 +863,18 @@ const RANK_TIERS = [
 function getRankTier(elo) { return RANK_TIERS.find(t => elo >= t.minElo) || RANK_TIERS[RANK_TIERS.length - 1]; }
 
 function RankingTab({ currentPlayerId }) {
+  const router = useRouter();
   const [rankings, setRankings] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetch('/api/ranking').then(r => r.json()).then(data => { setRankings(data.players || []); setLoading(false); }).catch(() => setLoading(false));
   }, []);
+
+  const goToProfile = (username) => {
+    if (!username) return;
+    router.push(`/profile/${encodeURIComponent(username)}`);
+  };
 
   if (loading) return <div className="text-center py-12 text-gray-400 animate-pulse">Cargando ranking...</div>;
 
@@ -932,15 +977,23 @@ function RankingTab({ currentPlayerId }) {
                     {tier.icon}
                   </div>
 
-                  {/* Username */}
-                  <p style={{
-                    fontSize: 13, fontWeight: 800, margin: '0 0 4px 0',
-                    color: isMe ? '#c084fc' : '#fff',
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  }}>
+                  {/* Username (clickable → perfil público) */}
+                  <button
+                    onClick={() => goToProfile(p.username)}
+                    style={{
+                      background: 'none', border: 'none', cursor: 'pointer',
+                      padding: 0, margin: '0 0 4px 0', width: '100%',
+                      fontSize: 13, fontWeight: 800,
+                      color: isMe ? '#c084fc' : '#fff',
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.textDecoration = 'underline'; }}
+                    onMouseLeave={e => { e.currentTarget.style.textDecoration = 'none'; }}
+                    title={`Ver perfil de ${p.username}`}
+                  >
                     {p.username}
                     {isMe && <span style={{ fontSize: 9, color: '#a855f7', marginLeft: 4 }}>(TU)</span>}
-                  </p>
+                  </button>
 
                   {/* ELO */}
                   <p style={{
@@ -1049,14 +1102,23 @@ function RankingTab({ currentPlayerId }) {
                   {tier.icon}
                 </div>
                 <div style={{ overflow: 'hidden' }}>
-                  <p style={{
-                    fontSize: 13, fontWeight: 700, margin: 0,
-                    color: isMe ? '#c084fc' : '#fff',
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  }}>
+                  <button
+                    onClick={() => goToProfile(p.username)}
+                    style={{
+                      background: 'none', border: 'none', cursor: 'pointer',
+                      padding: 0, margin: 0, textAlign: 'left',
+                      fontSize: 13, fontWeight: 700,
+                      color: isMe ? '#c084fc' : '#fff',
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      maxWidth: '100%',
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.textDecoration = 'underline'; }}
+                    onMouseLeave={e => { e.currentTarget.style.textDecoration = 'none'; }}
+                    title={`Ver perfil de ${p.username}`}
+                  >
                     {p.username}
                     {isMe && <span style={{ fontSize: 9, color: '#a855f7', marginLeft: 6, fontWeight: 800 }}>TU</span>}
-                  </p>
+                  </button>
                   <span style={{
                     fontSize: 9, fontWeight: 600, color: tier.color,
                     opacity: 0.7,

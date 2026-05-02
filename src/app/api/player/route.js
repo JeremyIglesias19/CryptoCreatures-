@@ -120,12 +120,12 @@ export async function POST(req) {
   for (let i = 0; i < 3; i++) {
     const creature = generateCreature('common', i);
     const res = await query(
-      `INSERT INTO creatures (owner_id, name, rarity, types, hp, atk, def, spd, ability, attacks, img_seed)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+      `INSERT INTO creatures (owner_id, name, rarity, types, hp, atk, def, spd, ability, attacks, img_seed, preferred_role)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
       [player.id, creature.name, creature.rarity, creature.types,
        creature.hp, creature.atk, creature.def, creature.spd,
        creature.ability, JSON.stringify(creature.attacks),
-       creature.imgSeed]
+       creature.imgSeed, creature.preferred_role]
     );
     starterCreatures.push(res.rows[0]);
   }
@@ -161,6 +161,12 @@ function generateCreature(rarityKey, index) {
   const abilityPool = ABILITY_POOLS[rarityKey];
   const ability = abilityPool[randInt(0, abilityPool.length - 1)];
 
+  // Preferred role: aleatorio al nacer del huevo, sin importar especie/rareza.
+  // 25% por rol. Mismo Gaiaroth puede salir aggressive/kiter/flanker/hybrid
+  // → cada criatura es única y tiene valor distinto en marketplace.
+  const ROLES = ['aggressive', 'kiter', 'flanker', 'hybrid'];
+  const preferred_role = ROLES[randInt(0, 3)];
+
   return {
     name,
     rarity: RARITIES[rarityKey].name,
@@ -172,6 +178,7 @@ function generateCreature(rarityKey, index) {
     ability,
     attacks,
     imgSeed: Math.random().toString(36).slice(2, 10),
+    preferred_role,
   };
 }
 

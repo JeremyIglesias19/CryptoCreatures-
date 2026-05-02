@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import CreatureAvatar from './CreatureAvatar';
 import { ABILITIES, RARITIES, rollQuality, getRarityKey } from '@/lib/gameData';
 import { useApi } from '@/lib/api';
@@ -280,6 +281,7 @@ export default function Marketplace({ player, creatures, privyId, solanaWallet, 
 // LISTING CARD
 // ============================================
 function ListingCard({ listing, player, onDetail, onCancel }) {
+  const router = useRouter();
   const types = Array.isArray(listing.types) ? listing.types : [listing.types];
   const rarColor = RARITY_COLORS[listing.rarity] || '#8b5cf6';
   const isMine = listing.seller_id === player.id;
@@ -322,7 +324,19 @@ function ListingCard({ listing, player, onDetail, onCancel }) {
       )}
       {!isMine && (
         <div className="mt-3 pt-3 border-t border-white/[0.05]">
-          <span className="text-[10px] text-gray-600">Vendedor: {listing.seller_username}</span>
+          <span className="text-[10px] text-gray-600">
+            Vendedor:{' '}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (listing.seller_username) router.push(`/profile/${encodeURIComponent(listing.seller_username)}`);
+              }}
+              className="hover:text-purple-300 hover:underline transition"
+              title={`Ver perfil de ${listing.seller_username}`}
+            >
+              {listing.seller_username}
+            </button>
+          </span>
         </div>
       )}
     </div>
@@ -388,6 +402,7 @@ function SellModal({ creature, onClose, onCreate }) {
 // DETAIL / BUY MODAL
 // ============================================
 function DetailModal({ listing, player, loading, onClose, onBuy }) {
+  const router = useRouter();
   const types = Array.isArray(listing.types) ? listing.types : [listing.types];
   const rarColor = RARITY_COLORS[listing.rarity] || '#8b5cf6';
   const isMine = listing.seller_id === player.id;
@@ -421,7 +436,21 @@ function DetailModal({ listing, player, loading, onClose, onBuy }) {
                   style={{ background: (TYPE_COLORS[t] || '#8b5cf6') + '22', color: TYPE_COLORS[t] }}>{t}</span>
               ))}
             </div>
-            <p className="text-[11px] text-gray-600 mt-1">Vendedor: {listing.seller_username}</p>
+            <p className="text-[11px] text-gray-600 mt-1">
+              Vendedor:{' '}
+              <button
+                onClick={() => {
+                  if (listing.seller_username) {
+                    onClose?.();
+                    router.push(`/profile/${encodeURIComponent(listing.seller_username)}`);
+                  }
+                }}
+                className="hover:text-purple-300 hover:underline transition"
+                title={`Ver perfil de ${listing.seller_username}`}
+              >
+                {listing.seller_username}
+              </button>
+            </p>
           </div>
         </div>
 

@@ -161,27 +161,29 @@ export function analyzeTeam(team) {
   };
 }
 
+// Cada ataque tiene `shape` que define cómo se renderiza y aplica daño.
+// Multiplicadores de daño se aplican en el engine via SHAPE_DAMAGE_MULT.
 export const ATTACKS_DB = [
-  {name:'Fogonazo',type:'Fuego',power:85,accuracy:90,effect:'Quemar',effectChance:20},
-  {name:'Brasas Vivas',type:'Fuego',power:55,accuracy:100,effect:null,effectChance:0},
-  {name:'Ignicion',type:'Fuego',power:110,accuracy:75,effect:'Quemar',effectChance:30},
-  {name:'Canon Abisal',type:'Agua',power:90,accuracy:85,effect:null,effectChance:0},
-  {name:'Salpicon',type:'Agua',power:50,accuracy:100,effect:null,effectChance:0},
-  {name:'Tsunami',type:'Agua',power:110,accuracy:75,effect:null,effectChance:0},
-  {name:'Filo Silvestre',type:'Naturaleza',power:80,accuracy:95,effect:null,effectChance:0},
-  {name:'Esporada',type:'Naturaleza',power:45,accuracy:100,effect:'Veneno',effectChance:40},
-  {name:'Tormenta Solar',type:'Naturaleza',power:115,accuracy:70,effect:null,effectChance:0},
-  {name:'Electropulso',type:'Rayo',power:90,accuracy:90,effect:'Paralisis',effectChance:15},
-  {name:'Arco Voltaico',type:'Rayo',power:50,accuracy:100,effect:'Paralisis',effectChance:10},
-  {name:'Fulgor Electrico',type:'Rayo',power:120,accuracy:65,effect:'Paralisis',effectChance:25},
-  {name:'Sacudida Sismica',type:'Tierra',power:95,accuracy:85,effect:null,effectChance:0},
-  {name:'Fango Explosivo',type:'Tierra',power:55,accuracy:100,effect:null,effectChance:0},
-  {name:'Grieta Abisal',type:'Tierra',power:120,accuracy:75,effect:null,effectChance:0},
-  {name:'Alud Gelido',type:'Hielo',power:85,accuracy:90,effect:'Congelar',effectChance:15},
-  {name:'Prisma Glacial',type:'Hielo',power:70,accuracy:95,effect:'Congelar',effectChance:10},
-  {name:'Cero Absoluto',type:'Hielo',power:120,accuracy:70,effect:'Congelar',effectChance:25},
-  {name:'Golpe Rapido',type:null,power:45,accuracy:100,effect:null,effectChance:0},
-  {name:'Arremetida',type:null,power:60,accuracy:95,effect:null,effectChance:0},
+  {name:'Fogonazo',type:'Fuego',power:85,accuracy:90,effect:'Quemar',effectChance:20,shape:'projectile'},
+  {name:'Brasas Vivas',type:'Fuego',power:55,accuracy:100,effect:null,effectChance:0,shape:'fan_3'},
+  {name:'Ignicion',type:'Fuego',power:110,accuracy:75,effect:'Quemar',effectChance:30,shape:'area'},
+  {name:'Canon Abisal',type:'Agua',power:90,accuracy:85,effect:null,effectChance:0,shape:'arrow'},
+  {name:'Salpicon',type:'Agua',power:50,accuracy:100,effect:null,effectChance:0,shape:'wave'},
+  {name:'Tsunami',type:'Agua',power:110,accuracy:75,effect:null,effectChance:0,shape:'wave'},
+  {name:'Filo Silvestre',type:'Naturaleza',power:80,accuracy:95,effect:null,effectChance:0,shape:'bounce'},
+  {name:'Esporada',type:'Naturaleza',power:45,accuracy:100,effect:'Veneno',effectChance:40,shape:'area'},
+  {name:'Tormenta Solar',type:'Naturaleza',power:115,accuracy:70,effect:null,effectChance:0,shape:'fan_5'},
+  {name:'Electropulso',type:'Rayo',power:90,accuracy:90,effect:'Paralisis',effectChance:15,shape:'wave'},
+  {name:'Arco Voltaico',type:'Rayo',power:50,accuracy:100,effect:'Paralisis',effectChance:10,shape:'beam'},
+  {name:'Fulgor Electrico',type:'Rayo',power:120,accuracy:65,effect:'Paralisis',effectChance:25,shape:'beam'},
+  {name:'Sacudida Sismica',type:'Tierra',power:95,accuracy:85,effect:null,effectChance:0,shape:'wave'},
+  {name:'Fango Explosivo',type:'Tierra',power:55,accuracy:100,effect:null,effectChance:0,shape:'projectile'},
+  {name:'Grieta Abisal',type:'Tierra',power:120,accuracy:75,effect:null,effectChance:0,shape:'area'},
+  {name:'Alud Gelido',type:'Hielo',power:85,accuracy:90,effect:'Congelar',effectChance:15,shape:'fan_5'},
+  {name:'Prisma Glacial',type:'Hielo',power:70,accuracy:95,effect:'Congelar',effectChance:10,shape:'arrow'},
+  {name:'Cero Absoluto',type:'Hielo',power:120,accuracy:70,effect:'Congelar',effectChance:25,shape:'area'},
+  {name:'Golpe Rapido',type:null,power:45,accuracy:100,effect:null,effectChance:0,shape:'charge'},
+  {name:'Arremetida',type:null,power:60,accuracy:95,effect:null,effectChance:0,shape:'charge'},
 ];
 
 export const ABILITIES = {
